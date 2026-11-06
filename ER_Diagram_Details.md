@@ -1,45 +1,22 @@
 # Foodpanda Online Food Delivery Platform - Database Design
 
 ## Objective
-The goal of this project is to design a database and application for a Foodpanda Online Food Delivery Platform. Foodpanda wants to build a database to manage its stratified user accounts (Buyers and Sellers), restaurant/grocery menus, group orders, order items, coupons, and merchant analytics.
+The goal of this assignment is to practice designing an ER diagram for a Foodpanda Online Food Delivery Platform.
+Foodpanda wants to build a database to manage its users, restaurants, menu items, group orders, favorites, and promotional activities.
+The business requirements are described as follows:
 
-## Business Requirements & ISA Modeling
+## Business Requirements
 
-* **Users (Supertype):** 
-  * **Description:** Foodpanda stores basic information for all registered accounts in a unified `Users` table, acting as the supertype entity in the system.
-  * **Attributes:** Unique `user_id` (PK), `username`, `email`, and `phone`. 
-  * **Functionality:** Supports universal user registration and login.
-
-* **Buyers (Subtype of Users):** 
-  * **Description:** A specialized user subtype representing customers who place orders or join group orders. Connected to `Users` via an ISA relationship.
-  * **Attributes & Relationships:** Inherits `user_id` from `Users`. Can be associated with multiple `User_Addresses` (each having an `address_id` [PK], `address_line`, and `label` like Home/Office) to support multiple delivery locations.
-
-* **Sellers (Subtype of Users):** 
-  * **Description:** Business entities operating on the platform, representing the second subtype of `Users` under the **ISA (Is-A) generalization hierarchy**.
-  * **Attributes:** Inherits `user_id` (serving as `seller_id`) and manages operational status. Sellers are further specialized into:
-    * **Restaurants:** Specialized sellers that offer prepared meals and dishes, characterized by specific attributes including `cuisine_type`, `rating`, and `is_active` status.
-    * **Grocery Stores:** Specialized sellers that offer retail goods and grocery inventories (designed as an expandable merchant type with dedicated inventory logic).
-
-* **Restaurants & Grocery Menu Items:** 
-  * **Description:** Each seller maintains its own catalog of goods or dishes.
-  * **Attributes:** Each menu item/good has a unique `item_id` (PK), `seller_id` (FK), `name`, `price`, and `is_available` status.
-  * **Operations:** Users can browse, search, and sort items. Merchants can manually update prices or delist items, and view backend analytics such as daily revenue and sales rankings (best-selling vs. underperforming items).
-
-* **Group Orders:** 
-  * **Description:** Users can initiate collaborative group orders tied to a specific seller.
-  * **Attributes:** Each group order has a unique `group_order_id` (PK), `host_user_id` (FK referencing Buyers), `seller_id` (FK referencing Sellers), `deadline`, `status` (open, locked, completed), and `fulfillment_type` (Delivery vs. Self-Pickup).
-  * **Operations:** A host can create, modify, or cancel a group order (which triggers cascading cleanup of associated members and items), and update its workflow status (`open` $\rightarrow$ `locked` $\rightarrow$ `completed`).
-
-* **Order Members:** 
-  * **Description:** Users can join or leave a group order as participants.
-  * **Implementation:** This forms a many-to-many (M:N) relationship between `Users` (Buyers) and `Group_Orders`, managed explicitly through an association table (`order_members`) containing member-specific records.
-
-* **Order Items & Fulfillment:** 
-  * **Description:** Items selected within a group order before locking.
-  * **Attributes & Rules:** Group order members can add items, update quantities, or remove items before the order is locked (modifications are strictly prohibited after locking). Each record in the `order_items` association table records a `unit_price` snapshot at the time of addition alongside the `quantity`. 
-  * **Calculations:** Members can view individual payment breakdowns, including proportionally shared delivery fees. **Fulfillment flexibility:** Orders support either **Delivery** (with delivery fees applied) or **Self-Pickup** (waiving delivery fees).
-
-* **Coupons & Discounts:** 
-  * **Description:** Platform-wide promotional vouchers to incentivize purchases.
-  * **Attributes:** Each coupon has a unique `coupon_id` / `code` (PK), `discount_value`, `min_spend` threshold, and `expiry_date`.
-  * **Operations:** Users can select and apply valid coupons during checkout, which automatically recalculates and deducts from the total order amount.
+* **Users:** Foodpanda stores basic information about all registered users. Each user has a unique user id, a username, an email, and a phone number. Users are specialized into Buyers and Sellers through an ISA generalization hierarchy, where every user is either a buyer or a seller, but not both.
+  * **Buyers:** Buyers represent customers who can place orders or join group orders. Each buyer inherits all attributes from Users and can save multiple delivery addresses. Each address has a unique address id, an address line, and a label (e.g., Home, Office). Each address belongs to exactly one buyer, while a buyer may save multiple addresses or none yet.
+  * **Sellers:** Sellers represent business entities operating on the platform and inherit all attributes from Users. Sellers are further specialized into Restaurants and Grocery Stores through an ISA generalization hierarchy, but not both.
+    * **Restaurants:** Restaurants offer prepared meals and dishes, recording specific attributes including a cuisine type, a rating, and an active status.
+    * **Grocery Stores:** Grocery Stores offer retail goods and grocery inventories, recording a store category and a rating.
+* **Menu Items:** Each seller maintains a catalog of items (dishes or grocery goods). Each menu item has a unique item id, an item name, a price, and an availability status. Each menu item is offered by exactly one seller, while a seller may offer multiple menu items. Some newly registered sellers may not have listed any menu items yet.
+* **Favorites:** Buyers can save their favorite sellers and favorite menu items for quick re-ordering.
+  * **Favorite Sellers:** A buyer may save multiple sellers as favorites, and a seller may be saved by multiple buyers. For each saved seller, Foodpanda records the saved time. Some buyers may not have saved any sellers, and some sellers may not be saved by any buyers yet.
+  * **Favorite Items:** A buyer may save multiple menu items as favorites, and a menu item may be saved by multiple buyers. For each saved item, Foodpanda records the saved time. Some buyers may not have saved any items, and some menu items may not be saved by any buyers yet.
+* **Group Orders:** Buyers can initiate collaborative group orders tied to a specific seller. Each group order has a unique group order id, a deadline, an order status (e.g., open, locked, completed), and a fulfillment type (e.g., Delivery or Self-Pickup). Each group order is hosted by exactly one buyer (the host) and corresponds to exactly one seller. A buyer may host multiple group orders, while a seller may receive multiple group orders.
+* **Order Members:** Buyers can join group orders as members. A buyer may join multiple group orders, and a group order may consist of multiple member buyers.
+* **Order Items:** Members can add menu items to a group order before it is locked. A group order contains multiple order items, and each menu item may be selected in multiple group orders. For each order item, Foodpanda records the purchase quantity, the unit price snapshot at the time of addition, and the member buyer who added the item.
+* **Coupons:** Foodpanda stores information about promotional coupons. Each coupon has a unique coupon id, a coupon code, a discount value, a minimum spend threshold, and an expiry date. A buyer may apply a coupon to a group order during checkout. A group order may use at most one coupon, while a coupon may be applied to multiple group orders by different buyers.
