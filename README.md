@@ -24,3 +24,14 @@
 | **取消未制作的订单** | 顾客 / 商家 | **Delete / Update** | `Orders` *(软删除或物理删除)* |
 | **提交订单评价** | 顾客 (Customer) | **Create** | `Reviews` |
 | **删除 / 撤回评语** | 顾客 (Customer) | **Delete** | `Reviews` |
+
+erDiagram
+    Users ||--o{ User_Addresses : has
+    Users ||--o{ Orders : places
+    Restaurants ||--o{ Dishes : offers
+    Restaurants ||--o{ Orders : receives
+    Orders ||--|{ Order_Items : contains
+    Dishes ||--o{ Order_Items : "ordered in"
+    Orders ||--o| Reviews : generates
+    Users ||--o{ Reviews : writes
+    Restaurants ||--o{ Reviews : receives
