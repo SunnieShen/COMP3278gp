@@ -1,14 +1,45 @@
 # Foodpanda Online Food Delivery Platform - Database Design
 
 ## Objective
-The goal of this project is to design a database and application for a Foodpanda Online Food Delivery Platform. Foodpanda wants to build a database to manage its users, delivery addresses, restaurants, dishes, orders, order items, and reviews.
+The goal of this project is to design a database and application for a Foodpanda Online Food Delivery Platform. Foodpanda wants to build a database to manage its stratified user accounts (Buyers and Sellers), restaurant/grocery menus, group orders, order items, coupons, and merchant analytics.
 
-## Business Requirements
+## Business Requirements & ISA Modeling
 
-* **Users:** Foodpanda stores information about all registered customers. Each user has a unique user id, a username, an email, and a phone number.
-* **User Addresses:** Users can save multiple delivery addresses. Each address has a unique address id, an address line, and a label (e.g., Home, Office). Each address belongs to exactly one user. A user may have multiple addresses, while some users may not have added any addresses yet.
-* **Restaurants:** Foodpanda stores information about various restaurants. Each restaurant has a unique restaurant id, a restaurant name, a cuisine type, a rating, and an active status indicating whether it is currently operating.
-* **Dishes:** Restaurants offer menus consisting of various dishes. Each dish has a unique dish id, a dish name, a price, and an availability status (e.g., in stock or sold out). Each dish is offered by exactly one restaurant. A restaurant may offer multiple dishes, while some newly registered restaurants may not have any dishes listed yet.
-* **Orders:** Users can place orders from restaurants. Each order has a unique order id, total amount, order status (e.g., Pending, Preparing, Delivering, Completed, Cancelled), and a creation date. Each order is placed by exactly one user and received by exactly one restaurant. A user may place multiple orders, while some users may not have placed any orders yet. A restaurant may receive multiple orders, while some restaurants may not have received any orders.
-* **Order Items:** Orders contain multiple items corresponding to specific dishes. Each order item has a unique order item id and records the purchase quantity and the unit price at the time of ordering. Each order item belongs to exactly one order and references exactly one dish. An order must contain one or more order items, while a dish may appear in multiple order items across different orders.
-* **Reviews:** Users can write reviews for completed orders and restaurants. Each review has a unique review id, a rating (from 1 to 5), and comment text. Each review corresponds to exactly one order, is written by exactly one user, and evaluates exactly one restaurant. An order may have at most one review, while a user or a restaurant may be associated with multiple reviews over time.
+* **Users (Supertype):** 
+  * **Description:** Foodpanda stores basic information for all registered accounts in a unified `Users` table, acting as the supertype entity in the system.
+  * **Attributes:** Unique `user_id` (PK), `username`, `email`, and `phone`. 
+  * **Functionality:** Supports universal user registration and login.
+
+* **Buyers (Subtype of Users):** 
+  * **Description:** A specialized user subtype representing customers who place orders or join group orders. Connected to `Users` via an ISA relationship.
+  * **Attributes & Relationships:** Inherits `user_id` from `Users`. Can be associated with multiple `User_Addresses` (each having an `address_id` [PK], `address_line`, and `label` like Home/Office) to support multiple delivery locations.
+
+* **Sellers (Subtype of Users):** 
+  * **Description:** Business entities operating on the platform, representing the second subtype of `Users` under the **ISA (Is-A) generalization hierarchy**.
+  * **Attributes:** Inherits `user_id` (serving as `seller_id`) and manages operational status. Sellers are further specialized into:
+    * **Restaurants:** Specialized sellers that offer prepared meals and dishes, characterized by specific attributes including `cuisine_type`, `rating`, and `is_active` status.
+    * **Grocery Stores:** Specialized sellers that offer retail goods and grocery inventories (designed as an expandable merchant type with dedicated inventory logic).
+
+* **Restaurants & Grocery Menu Items:** 
+  * **Description:** Each seller maintains its own catalog of goods or dishes.
+  * **Attributes:** Each menu item/good has a unique `item_id` (PK), `seller_id` (FK), `name`, `price`, and `is_available` status.
+  * **Operations:** Users can browse, search, and sort items. Merchants can manually update prices or delist items, and view backend analytics such as daily revenue and sales rankings (best-selling vs. underperforming items).
+
+* **Group Orders:** 
+  * **Description:** Users can initiate collaborative group orders tied to a specific seller.
+  * **Attributes:** Each group order has a unique `group_order_id` (PK), `host_user_id` (FK referencing Buyers), `seller_id` (FK referencing Sellers), `deadline`, `status` (open, locked, completed), and `fulfillment_type` (Delivery vs. Self-Pickup).
+  * **Operations:** A host can create, modify, or cancel a group order (which triggers cascading cleanup of associated members and items), and update its workflow status (`open` $\rightarrow$ `locked` $\rightarrow$ `completed`).
+
+* **Order Members:** 
+  * **Description:** Users can join or leave a group order as participants.
+  * **Implementation:** This forms a many-to-many (M:N) relationship between `Users` (Buyers) and `Group_Orders`, managed explicitly through an association table (`order_members`) containing member-specific records.
+
+* **Order Items & Fulfillment:** 
+  * **Description:** Items selected within a group order before locking.
+  * **Attributes & Rules:** Group order members can add items, update quantities, or remove items before the order is locked (modifications are strictly prohibited after locking). Each record in the `order_items` association table records a `unit_price` snapshot at the time of addition alongside the `quantity`. 
+  * **Calculations:** Members can view individual payment breakdowns, including proportionally shared delivery fees. **Fulfillment flexibility:** Orders support either **Delivery** (with delivery fees applied) or **Self-Pickup** (waiving delivery fees).
+
+* **Coupons & Discounts:** 
+  * **Description:** Platform-wide promotional vouchers to incentivize purchases.
+  * **Attributes:** Each coupon has a unique `coupon_id` / `code` (PK), `discount_value`, `min_spend` threshold, and `expiry_date`.
+  * **Operations:** Users can select and apply valid coupons during checkout, which automatically recalculates and deducts from the total order amount.
