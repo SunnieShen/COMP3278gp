@@ -5,8 +5,6 @@
 > 同学们围绕一家餐厅**发起拼单**，各自加菜，系统自动算出**每人应付**（含配送费分摊）。
 > 与常见外卖系统的区别：订单不再属于单一顾客，而是属于一组人（M:N）——这是本系统数据模型的核心设计维度。
 
-[ER_draw.io] (https://drive.google.com/file/d/1b7vayr8sRvNcRWX1jdi7jlw_3vsMw5-Z/view?usp=sharing)
-使用draw.io打开后edit
 
 ## Task Allocation
 
