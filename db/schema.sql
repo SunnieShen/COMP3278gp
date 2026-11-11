@@ -21,7 +21,7 @@
 --   addresses(address_id PK, buyer_user_id FK->buyers, address_line, label)   -- SAVES 1:N
 --   menu_items(item_id PK, seller_user_id FK->sellers, item_name, price, availability_status) -- OFFERS 1:N
 --   coupons(coupon_id PK, buyer_user_id FK->buyers, coupon_code, discount_value, minimum_spend_threshold, expiry_date) -- OWNS 1:N
---   orders(order_id PK, buyer_user_id FK->buyers, seller_user_id FK->sellers,
+--   orders(order_id PK, host_user_id FK->buyers, seller_user_id FK->sellers,
 --          coupon_id UK/FK->coupons, order_timestamp, order_status, fulfillment_type)  -- PLACES / FULFILLS / APPLIES
 --   solo_orders(order_id PK/FK->orders)                 -- ISA subtype
 --   group_orders(order_id PK/FK->orders, deadline)     -- ISA subtype
@@ -43,12 +43,12 @@
 --   1. ISA is total + disjoint: every user is exactly one of buyer/seller/courier,
 --      every seller exactly one of restaurant/grocery_store, every order exactly
 --      one of solo/group. Enforce with a role column or triggers at insertion time.
---   2. A group order's host (= orders.buyer_user_id) is also a row in
+--   2. A group order's host (= orders.host_user_id) is also a row in
 --      group_order_participants; every group order has at least one participant.
 --   3. order_items.user_id must be the host or a participant of that order.
 --   4. Only orders with fulfillment_type = 'Delivery' may have a deliveries row.
 --   5. Coupon checks: not expired, order amount >= minimum_spend_threshold,
---      coupons.buyer_user_id = orders.buyer_user_id (a voucher is single-use
+--      coupons.buyer_user_id = orders.host_user_id (a voucher is single-use
 --      and owned by exactly one buyer).
 --   6. After deadline (status 'locked'), no insert/update/delete of order items
 --      or participants. If the host may lock early, add a locked_at column to
@@ -159,13 +159,13 @@ CREATE TABLE coupons (
 -- ---------------------------------------------------------------------
 CREATE TABLE orders (
     order_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    buyer_user_id BIGINT UNSIGNED NOT NULL,
+    host_user_id BIGINT UNSIGNED NOT NULL,
     seller_user_id BIGINT UNSIGNED NOT NULL,
     coupon_id BIGINT UNSIGNED UNIQUE,
     order_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     order_status VARCHAR(20) NOT NULL,
     fulfillment_type ENUM('Delivery', 'Self-Pickup') NOT NULL,
-    FOREIGN KEY (buyer_user_id) REFERENCES buyers(user_id),
+    FOREIGN KEY (host_user_id) REFERENCES buyers(user_id),
     FOREIGN KEY (seller_user_id) REFERENCES sellers(user_id),
     FOREIGN KEY (coupon_id) REFERENCES coupons(coupon_id)
 );

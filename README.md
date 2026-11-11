@@ -32,9 +32,9 @@ This README follows the [ER03 diagram](ER/ER03.png), its [editable source](ER/ER
 
 ![Current ER diagram](ER/ER03.png)
 
-- The ER diagram, business descriptions and `db/schema.sql` are available. Having a creation script does not mean it has been imported and verified successfully.
+- The ER diagram, business descriptions, `db/schema.sql` and reproducible import script `db/setup.sh` are available.
 - The current database design contains **18 tables and 2 views**. Database-backed application features still require implementation, integration and testing.
-- The mock frontend is available in `frontend/`. Database seed data, a real backend, database connectivity and configuration examples are still pending.
+- The mock frontend is available in `frontend/`. Test fixtures are available in `db/seed.sql`; a real backend, database connectivity and configuration examples are still pending.
 - `ER_Diagram_Details*.md` contains several design revisions. Resolve discrepancies against ER03 and the schema script.
 
 ## Database Design
@@ -54,7 +54,7 @@ PK = primary key; FK = foreign key; UK = unique key.
 | `addresses` | `address_id` PK, `buyer_user_id` FK, `address_line`, `label` | Saved buyer addresses |
 | `menu_items` | `item_id` PK, `seller_user_id` FK, `item_name`, `price`, `availability_status` | Items offered by a seller |
 | `coupons` | `coupon_id` PK, `buyer_user_id` FK, `coupon_code`, `discount_value`, `minimum_spend_threshold`, `expiry_date` | Buyer-owned coupons |
-| `orders` | `order_id` PK, `buyer_user_id` FK, `seller_user_id` FK, `coupon_id` UK/FK, `order_timestamp`, `order_status`, `fulfillment_type` | Shared order information |
+| `orders` | `order_id` PK, `host_user_id` FK → buyers, `seller_user_id` FK → sellers, `coupon_id` UK/FK, `order_timestamp`, `order_status`, `fulfillment_type` | Shared order information; host is the placing buyer |
 | `solo_orders` | `order_id` PK/FK → orders | Solo-order subtype |
 | `group_orders` | `order_id` PK/FK → orders, `deadline` | Group-order subtype |
 | `group_order_participants` | (`order_id`, `buyer_user_id`) composite PK/FKs | Many-to-many group membership |
@@ -67,7 +67,7 @@ PK = primary key; FK = foreign key; UK = unique key.
 ### ER Rules & Implementation Notes
 
 - **Total, disjoint ISA:** Each user is exactly one of buyer, seller or courier; each seller is exactly one of restaurant or grocery store; each order is exactly one of solo or group. Separate subtype tables are used. Foreign keys alone do not enforce completeness or exclusivity; application logic or triggers are still needed.
-- **Order ownership:** Each order has one placing buyer and one seller. Group orders connect multiple buyers through the participation table, which must also include the host.
+- **Order ownership:** `orders.host_user_id` identifies the one placing buyer (the host) and `seller_user_id` identifies the seller. Group orders connect multiple buyers through the participation table, which must also include the host. `group_order_participants.buyer_user_id` identifies all participants; it is not a second order owner column.
 - **Order items:** The order, buyer and item IDs form a composite identity. `unit_price_snapshot` preserves historical prices. The backend must validate membership and ensure each item belongs to the order's seller.
 - **Group status:** `group_order_status_view` derives `open` / `locked` from the deadline. Completion and cancellation use `orders.order_status`. The backend must prevent membership and item changes after the deadline. Early locking is not implemented in the database and cannot be supported by this view alone.
 - **Coupons:** Each coupon belongs to one buyer. An order accepts at most one coupon, and the unique constraint on `orders.coupon_id` limits a coupon to one order. Ownership, expiry and minimum spend require backend validation.
@@ -119,14 +119,37 @@ These queries use the current schema fields but have not been executed against t
 
 ### Database
 
-Use MySQL **8.0.16+** so that CHECK constraints are enforced. From the repository root:
+Use MySQL **8.0.16+** so that CHECK constraints are enforced. From the repository root, run the following command. The script creates the database if needed, imports `db/schema.sql`, and prompts for the MySQL password:
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE group_eats CHARACTER SET utf8mb4;"
-mysql -u root -p group_eats < db/schema.sql
+bash db/setup.sh
 ```
 
-Run `schema.sql` against an empty database. It is not a repeatable reset script. `db/seed.sql` is not available yet; seed import instructions will be added when the data is ready. These are intended setup steps; a local database import has not yet been verified.
+Connection settings and the target database can be overridden with environment variables:
+
+```bash
+MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=root MYSQL_DATABASE=group_eats bash db/setup.sh
+```
+
+The target database must be new and empty; `schema.sql` is not a reset script and rerunning it against existing tables will fail. Use a new `MYSQL_DATABASE` when reproducing the import. The documented import command was run successfully against the local MySQL database.
+
+For an existing database created from the previous schema, apply the one-time column rename before importing the updated test data:
+
+```bash
+mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
+```
+
+The migration renames `orders.buyer_user_id` to `orders.host_user_id`; it preserves existing values and the foreign key.
+
+#### Test Data
+
+After creating the schema, import the test fixtures with:
+
+```bash
+bash db/seed.sh
+```
+
+The script imports approximately 120 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
 
 ### Application — Integration Pending
 
@@ -144,9 +167,12 @@ ER/                         ER diagrams and editable draw.io files
 ER_Diagram_Details*.md       Business design revisions
 Instruction/                Course requirements and references
 db/schema.sql               Creation script: 18 tables and 2 views
+db/setup.sh                 Reproducible database creation and schema import
+db/seed.sql                 Repeatable test data for the database tables
+db/seed.sh                  One-command test data import
 frontend/                   Mock frontend, local assets and setup guide
 README.md                   English project guide (default)
 README.zh-CN.md             Simplified Chinese project guide
 ```
 
-The frontend includes sample data and a separate data-access module. Database seed data, a real backend, related dependencies and configuration, and end-to-end database verification are still pending.
+The frontend includes sample data and a separate data-access module. A real backend, related dependencies and configuration, and end-to-end database verification are still pending.

@@ -32,9 +32,9 @@ python3 -m http.server 5173 --directory frontend --bind 127.0.0.1
 
 ![Current ER diagram](ER/ER03.png)
 
-- 已有 ER 图、业务说明和 `db/schema.sql`；建表脚本的存在不代表已经成功导入和验证。
+- 已有 ER 图、业务说明、`db/schema.sql` 和可复现导入脚本 `db/setup.sh`
 - 当前数据库设计为 **18 张表、2 个视图**。实际网站功能仍需实现、整合和测试。
-- 已有 `frontend/` mock 页面；`db/seed.sql`、真实后端、数据库连接和相关配置示例尚待补齐。
+- 已有 `frontend/` mock 页面和 `db/seed.sql` 测试数据；真实后端、数据库连接和相关配置示例尚待补齐。
 - `ER_Diagram_Details*.md` 保留了多版说明；出现冲突时，应与 ER03 和建表脚本核对后统一。
 
 ## Database Design
@@ -54,7 +54,7 @@ PK = 主键，FK = 外键，UK = 唯一键。
 | `addresses` | `address_id` PK, `buyer_user_id` FK, `address_line`, `label` | 买家保存的地址 |
 | `menu_items` | `item_id` PK, `seller_user_id` FK, `item_name`, `price`, `availability_status` | 商家提供的商品 |
 | `coupons` | `coupon_id` PK, `buyer_user_id` FK, `coupon_code`, `discount_value`, `minimum_spend_threshold`, `expiry_date` | 买家拥有的优惠券 |
-| `orders` | `order_id` PK, `buyer_user_id` FK, `seller_user_id` FK, `coupon_id` UK/FK, `order_timestamp`, `order_status`, `fulfillment_type` | 订单公共信息 |
+| `orders` | `order_id` PK, `host_user_id` FK → buyers, `seller_user_id` FK → sellers, `coupon_id` UK/FK, `order_timestamp`, `order_status`, `fulfillment_type` | 订单公共信息；host 是下单发起人 |
 | `solo_orders` | `order_id` PK/FK → orders | 个人订单子类 |
 | `group_orders` | `order_id` PK/FK → orders, `deadline` | 拼单子类 |
 | `group_order_participants` | (`order_id`, `buyer_user_id`) composite PK/FKs | 买家参与拼单的多对多关系 |
@@ -67,7 +67,7 @@ PK = 主键，FK = 外键，UK = 唯一键。
 ### ER Rules & Implementation Notes
 
 - **ISA（total, disjoint）**：每个用户恰为买家、商家、骑手之一；每个商家恰为餐厅、杂货店之一；每个订单恰为个人单、拼单之一。采用独立子类表；当前外键本身不能保证完全且互斥，仍需应用逻辑或触发器维护。
-- **订单归属**：每个订单由一位买家发起、对应一个商家；拼单另用参与表连接多位买家，发起人也必须加入参与表。
+- **订单归属**：`orders.host_user_id` 记录唯一的下单发起人（团长），`seller_user_id` 记录商家。拼单通过参与表关联多位买家，且团长也必须加入参与表。`group_order_participants.buyer_user_id` 表示所有参与者，不是订单的第二个归属字段。
 - **订单明细**：由订单、买家、商品三个编号联合标识，保存 `unit_price_snapshot`，避免菜单改价影响历史金额。后端仍需检查添加者资格，以及商品是否属于订单商家。
 - **拼单状态**：`group_order_status_view` 按截止时间派生 `open` / `locked`；完成或取消等业务状态使用 `orders.order_status`。后端需要阻止截止后的成员和明细修改。提前锁定目前未实现，不能只靠该视图支持。
 - **优惠券**：每张券归属一位买家；订单最多使用一张，`orders.coupon_id` 唯一约束限制同一券最多关联一个订单。有效期、满减门槛和使用人需由后端校验。
@@ -119,14 +119,37 @@ FROM group_order_status_view;
 
 ### Database
 
-要求 MySQL **8.0.16+**，以支持脚本中实际生效的 CHECK 约束。从仓库根目录执行：
+要求 MySQL **8.0.16+**，以支持脚本中实际生效的 CHECK 约束。从仓库根目录运行以下命令；脚本会创建数据库（如尚不存在），导入 `db/schema.sql`，并提示输入 MySQL 密码：
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE group_eats CHARACTER SET utf8mb4;"
-mysql -u root -p group_eats < db/schema.sql
+bash db/setup.sh
 ```
 
-`schema.sql` 不是可重复执行的重置脚本，应首次在空库运行。`db/seed.sql` 尚未提供，演示数据准备好后再补充导入命令。上述命令为预期操作步骤，尚未完成本地导入验证。
+可通过环境变量指定连接信息和目标库，例如：
+
+```bash
+MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=root MYSQL_DATABASE=group_eats bash db/setup.sh
+```
+
+目标数据库必须是新建的空库；`schema.sql` 不是重置脚本，在已建表的库上重复运行会报错。需要重新验证时，请改用一个新的 `MYSQL_DATABASE`。上述建表命令已在本机 MySQL 数据库成功运行。
+
+若数据库已由旧版 schema 建立，重新导入新版测试数据前需执行一次列名迁移：
+
+```bash
+mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
+```
+
+该迁移会将 `orders.buyer_user_id` 改名为 `orders.host_user_id`，保留已有数据和外键。
+
+#### 测试数据
+
+建表完成后，运行以下命令导入测试数据：
+
+```bash
+bash db/seed.sh
+```
+
+脚本会将约 120 条相互关联的测试记录从 `db/seed.sql` 导入选定数据库，并提示输入 MySQL 密码。数据覆盖多个买家和商家、在售及停售商品、已使用及过期优惠券、个人单和不同截止状态的拼单、多种订单状态、配送和自取、评分、收藏及不同配送进度。在拼单 `94002` 和 `94005` 中，不同买家都添加了同一个菜品，体现同一拼单中多人可选择相同菜品的情况。数据使用专用 ID 和 upsert，重复运行会更新同一批测试记录，不会重复新增。可使用与 `db/setup.sh` 相同的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_DATABASE` 环境变量指定连接信息。测试账号的密码哈希是占位值，仅用于数据库测试。
 
 ### Application — Pending
 
@@ -144,7 +167,10 @@ ER/                         ER 图与可编辑 draw.io 文件
 ER_Diagram_Details*.md       多版业务设计说明
 Instruction/                课程要求与参考资料
 db/schema.sql               当前 18 张表、2 个视图的建表脚本
+db/setup.sh                 创建数据库并导入 schema.sql 的可复现脚本
+db/seed.sql                 可重复导入的数据库测试数据
+db/seed.sh                  一键导入测试数据
 README.md                   分工、当前设计及实现状态
 ```
 
-`frontend/` 已提供前端源码、模拟数据、独立数据访问模块和本地食物图片。待补充：数据库示例数据、真实后端、相关依赖及配置，并验证端到端数据库流程。
+`frontend/` 已提供前端源码、模拟数据、独立数据访问模块和本地食物图片。待补充：真实后端、相关依赖及配置，并验证端到端数据库流程。
