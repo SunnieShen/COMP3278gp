@@ -1,8 +1,10 @@
 -- COMP3278 Group Eats test fixtures
 -- Import after schema.sql. All IDs are reserved for these fixtures.
 -- Re-running this file updates the same fixture rows instead of duplicating them.
--- Contains approximately 120 rows across all tables, covering different order,
--- coupon, fulfillment, availability, rating, and group-deadline scenarios.
+-- Fixtures are chosen for CASE COVERAGE, not volume: every row exists to exercise
+-- one design decision (ISA total/disjoint, participation 0 / 1 / N, M:N, 1:1,
+-- weak entity, derived attributes, price snapshots). See README.md
+-- "Design decisions and fixture evidence" for the decision each case supports.
 
 START TRANSACTION;
 
@@ -14,11 +16,14 @@ INSERT INTO users (user_id, username, email, phone_number, password_hash) VALUES
     (90005, 'Test Buyer Emma', 'emma.test@example.invalid', '+85200009005', 'test-only-hash-90005'),
     (90006, 'Test Buyer Frank', 'frank.test@example.invalid', '+85200009006', 'test-only-hash-90006'),
     (90007, 'Test Buyer Grace', 'grace.test@example.invalid', '+85200009007', 'test-only-hash-90007'),
+    (90008, 'Test Buyer Helen', 'helen.test@example.invalid', '+85200009008', 'test-only-hash-90008'),
     (90101, 'Test Restaurant', 'restaurant.test@example.invalid', '+85200009101', 'test-only-hash-90101'),
     (90102, 'Test Grocery Store', 'grocery.test@example.invalid', '+85200009102', 'test-only-hash-90102'),
     (90103, 'Test Noodle Shop', 'noodles.test@example.invalid', '+85200009103', 'test-only-hash-90103'),
+    (90104, 'Test New Seller', 'newseller.test@example.invalid', '+85200009104', 'test-only-hash-90104'),
     (90201, 'Test Courier', 'courier.test@example.invalid', '+85200009201', 'test-only-hash-90201'),
-    (90202, 'Test Courier Two', 'courier2.test@example.invalid', '+85200009202', 'test-only-hash-90202')
+    (90202, 'Test Courier Two', 'courier2.test@example.invalid', '+85200009202', 'test-only-hash-90202'),
+    (90203, 'Test Courier Three', 'courier3.test@example.invalid', '+85200009203', 'test-only-hash-90203')
 ON DUPLICATE KEY UPDATE
     username = VALUES(username),
     email = VALUES(email),
@@ -26,16 +31,17 @@ ON DUPLICATE KEY UPDATE
     password_hash = VALUES(password_hash);
 
 INSERT INTO buyers (user_id) VALUES
-    (90001), (90002), (90003), (90004), (90005), (90006), (90007)
+    (90001), (90002), (90003), (90004), (90005), (90006), (90007), (90008)
 ON DUPLICATE KEY UPDATE user_id = VALUES(user_id);
 
 INSERT INTO sellers (user_id) VALUES
-    (90101), (90102), (90103)
+    (90101), (90102), (90103), (90104)
 ON DUPLICATE KEY UPDATE user_id = VALUES(user_id);
 
 INSERT INTO couriers (user_id, vehicle_type, license_plate_number, availability_status) VALUES
     (90201, 'Bicycle', 'TEST-90201', 'Available'),
-    (90202, 'Motorcycle', 'TEST-90202', 'On Delivery')
+    (90202, 'Motorcycle', 'TEST-90202', 'On Delivery'),
+    (90203, 'Bicycle', 'TEST-90203', 'Available')
 ON DUPLICATE KEY UPDATE
     vehicle_type = VALUES(vehicle_type),
     license_plate_number = VALUES(license_plate_number),
@@ -43,7 +49,8 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO restaurants (user_id, cuisine_type, active_status) VALUES
     (90101, 'Hong Kong Cafe', 'Active'),
-    (90103, 'Noodles', 'Active')
+    (90103, 'Noodles', 'Active'),
+    (90104, 'Test Cuisine', 'Inactive')
 ON DUPLICATE KEY UPDATE
     cuisine_type = VALUES(cuisine_type),
     active_status = VALUES(active_status);
@@ -52,6 +59,7 @@ INSERT INTO grocery_stores (user_id, store_category) VALUES
     (90102, 'Test Grocery')
 ON DUPLICATE KEY UPDATE store_category = VALUES(store_category);
 
+-- 90001 has two addresses, 90008 has none: both sides of SAVES 1:N / partial participation.
 INSERT INTO addresses (address_id, buyer_user_id, address_line, label) VALUES
     (91001, 90001, 'Test Address 1, Central', 'Home'),
     (91002, 90002, 'Test Address 2, Sheung Wan', 'Home'),
@@ -59,12 +67,15 @@ INSERT INTO addresses (address_id, buyer_user_id, address_line, label) VALUES
     (91004, 90004, 'Test Address 4, Kowloon City', 'Home'),
     (91005, 90005, 'Test Address 5, Mong Kok', 'Home'),
     (91006, 90006, 'Test Address 6, Causeway Bay', 'Work'),
-    (91007, 90007, 'Test Address 7, Tai Wai', 'Home')
+    (91007, 90007, 'Test Address 7, Tai Wai', 'Home'),
+    (91008, 90001, 'Test Address 1B, Central', 'Work')
 ON DUPLICATE KEY UPDATE
     buyer_user_id = VALUES(buyer_user_id),
     address_line = VALUES(address_line),
     label = VALUES(label);
 
+-- 90104 is a seller with no menu items and no ratings (partial participation on
+-- OFFERS and RATE); seller_rating_view must still return a row with a NULL rating.
 INSERT INTO menu_items (item_id, seller_user_id, item_name, price, availability_status) VALUES
     (92001, 90101, 'Test Set Meal', 68.00, 'Available'),
     (92002, 90101, 'Test Milk Tea', 22.00, 'Available'),
@@ -120,6 +131,8 @@ INSERT INTO solo_orders (order_id) VALUES
     (94001), (94004), (94007)
 ON DUPLICATE KEY UPDATE order_id = VALUES(order_id);
 
+-- 2099 deadlines are always open, 2000 deadlines always locked, so the derived
+-- group_order_status_view returns both branches regardless of when it is queried.
 INSERT INTO group_orders (order_id, deadline) VALUES
     (94002, '2099-12-31 23:59:59'),
     (94003, '2000-01-01 00:00:00'),
@@ -146,8 +159,12 @@ ON DUPLICATE KEY UPDATE
     order_id = VALUES(order_id),
     buyer_user_id = VALUES(buyer_user_id);
 
+-- 94001/92003 keeps a historical unit price (16.50) that differs from the current
+-- menu_items.price (18.50): the snapshot is evidence, not a copy of the catalogue.
+-- 94002 and 94005 each contain item 92001 added by TWO different buyers, which
+-- is exactly the case the three-part PK (order_id, user_id, item_id) must allow.
 INSERT INTO order_items (order_id, user_id, item_id, quantity, unit_price_snapshot) VALUES
-    (94001, 90003, 92003, 2, 18.50),
+    (94001, 90003, 92003, 2, 16.50),
     (94001, 90003, 92004, 1, 25.00),
     (94002, 90001, 92001, 1, 68.00),
     (94002, 90002, 92002, 2, 22.00),
@@ -170,8 +187,11 @@ ON DUPLICATE KEY UPDATE
     quantity = VALUES(quantity),
     unit_price_snapshot = VALUES(unit_price_snapshot);
 
+-- 90001 favourites two sellers and 92001 is favourited by two buyers: both
+-- directions of the two M:N favourites relationships are represented.
 INSERT INTO favorite_sellers (buyer_user_id, seller_user_id, saved_time) VALUES
     (90001, 90101, '2026-01-10 09:00:00'),
+    (90001, 90102, '2026-01-16 10:00:00'),
     (90002, 90102, '2026-01-11 09:30:00'),
     (90004, 90103, '2026-01-13 12:00:00'),
     (90005, 90101, '2026-01-14 08:15:00'),
@@ -180,6 +200,7 @@ ON DUPLICATE KEY UPDATE saved_time = VALUES(saved_time);
 
 INSERT INTO favorite_items (buyer_user_id, item_id, saved_time) VALUES
     (90001, 92001, '2026-01-10 09:05:00'),
+    (90002, 92001, '2026-01-16 10:05:00'),
     (90003, 92003, '2026-01-12 10:00:00'),
     (90004, 92005, '2026-01-13 12:05:00'),
     (90005, 92008, '2026-01-14 08:20:00'),
@@ -187,6 +208,8 @@ INSERT INTO favorite_items (buyer_user_id, item_id, saved_time) VALUES
     (90007, 92007, '2026-01-15 17:50:00')
 ON DUPLICATE KEY UPDATE saved_time = VALUES(saved_time);
 
+-- Scores are deliberately uneven, so seller_rating_view produces non-trivial
+-- averages (90101 = 4.1667, 90102 = 4.25, 90103 = 3.75); 90104 has no scores.
 INSERT INTO seller_ratings (buyer_user_id, seller_user_id, score) VALUES
     (90001, 90101, 5.0),
     (90002, 90101, 4.0),
@@ -197,6 +220,8 @@ INSERT INTO seller_ratings (buyer_user_id, seller_user_id, score) VALUES
     (90007, 90103, 2.5)
 ON DUPLICATE KEY UPDATE score = VALUES(score);
 
+-- Only the six Delivery orders have a delivery; the three Self-Pickup orders have
+-- none. 90203 has no deliveries, covering the 0 side of COURIER ASSIGNED_TO.
 INSERT INTO deliveries
     (delivery_id, order_id, courier_user_id, delivery_status, delivery_timestamp, shipping_fee)
 VALUES

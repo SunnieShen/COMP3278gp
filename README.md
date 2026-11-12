@@ -76,6 +76,24 @@ PK = primary key; FK = foreign key; UK = unique key.
 - **Deletion:** Current foreign keys do not cascade deletes. Define transactional deletion of dependent records, or agree on changes to the foreign-key rules.
 - **Open decisions:** Addresses are not directly linked to orders in the current schema. Agree on how order delivery addresses are selected and stored, and how coupons affect group cost allocation, before implementing those features.
 
+### Design decisions and fixture evidence
+
+The revisions came from three annotated review rounds kept outside this repository (`ER01问题.pdf`, `ER01问题 回应.pdf`, `Foodpanda_ER_02 问题.pdf`, `关于Foodpanda_ER_03的想法.pdf`). `db/seed.sql` is deliberately small: for each decision there is at least one row that the earlier design could not represent without loss, duplication or redundancy. Case coverage, not row count, is the criterion.
+
+| Design decision | Raised in review | Fixture evidence | Schema object |
+|---|---|---|---|
+| One account = exactly one role (total, disjoint ISA) | ER01 red note "必须为 buyer/seller/courier 中的一种"; ER03 想法 §1 | 15 users split into 90001–90008 buyers, 90101–90104 sellers, 90201–90203 couriers, no overlap | `users` + three role tables |
+| Surrogate `address_id`; a buyer may have 0..N addresses | ER02 问题 (same `address_line` for different buyers); ER03 想法 §2 | 90001 → 91001 + 91008; 90008 → none | `addresses` PK / FK |
+| No duplicate favourites; M:N works in both directions | ER01 "一个买家不能多次收藏同一个商家"; ER03 想法 §3 | 90001 favourites 90101 and 90102; 92001 is favourited by 90001 and 90002 | composite PKs on both favourites tables |
+| `rating` is derived, backed by a RATE M:N relationship | ER01 回应 ① blue `buyer — rate — seller` sketch, two old `rating` ellipses crossed out | 7 scores → 4.1667 / 4.25 / 3.75; 90104 → NULL via LEFT JOIN | `seller_ratings`, `seller_rating_view` |
+| ORDER_ITEM is an ID-dependent weak entity with a three-part key | ER01 回应 green double outlines on ADDS / CONTAINS / SELECTS | 94002 and 94005: item 92001 added by two different buyers | `order_items` PK |
+| `group_status` derived from deadline; `completed` belongs to `order_status` | ER01 回应 "group_status 作为 derived attribute from deadline" | 2099 / 2000 deadlines; 94009 is `locked` but still `Pending` | `group_order_status_view` |
+| `shipping_fee` on DELIVERY; HAS_DELIVERY is 1:1 and partial | ER01 回应 green "shipping_fee?" circle near DELIVERY | 6 Delivery orders have exactly one delivery; 3 Self-Pickup orders have none | `deliveries.order_id UNIQUE` |
+| Coupon is a per-buyer, single-use voucher (1:1 APPLIES) | ER01 回应 "really?" on coupon reuse; ER03 想法 §5 Option B | 4 coupons used once each, 93004 expired and unused, 5 orders with NULL coupon | `orders.coupon_id UNIQUE`, `coupons.buyer_user_id` |
+| ORDERS supertype over solo / group orders | ER02 问题 "shared features" + hand-drawn ISA sketch; ER03 想法 §4 | 9 orders = 3 solo + 6 group sharing host, seller and status | `orders` + two subtype tables |
+| Price snapshot must survive catalogue changes | ER02 问题 `unit price snapshot` | 94001 / 92003 stores 16.50 while the current price is 18.50 | `order_items.unit_price_snapshot` |
+| The 0 side of participation is real | ER01 "一个骑手可接 0 或 ≥1 单"; "新卖家尚未列出菜单项" | 90203 has no deliveries; 90104 has no items and no ratings | role tables, `LEFT JOIN` in the views |
+
 ## Planned Features & CRUD Mapping
 
 These are capabilities supported by the design, not a list of completed features. The team must confirm the final implementation scope.
@@ -105,7 +123,7 @@ FROM group_order_participants p
 JOIN users u ON u.user_id = p.buyer_user_id
 LEFT JOIN order_items i
   ON i.order_id = p.order_id AND i.user_id = p.buyer_user_id
-WHERE p.order_id = 1
+WHERE p.order_id = 94002
 GROUP BY p.order_id, u.user_id, u.username;
 
 -- Read group status derived from the deadline.
@@ -113,7 +131,7 @@ SELECT order_id, deadline, group_status
 FROM group_order_status_view;
 ```
 
-These queries use the current schema fields but have not been executed against the project database.
+With `db/seed.sql` imported, the first query returns `90001 = 68.00` and `90002 = 112.00` (total `180.00`); the second returns three `open` and three `locked` group orders. These queries use the current schema fields but have not been executed against a live MySQL instance in this repository.
 
 ## Environment & Setup
 
@@ -149,7 +167,7 @@ After creating the schema, import the test fixtures with:
 bash db/seed.sh
 ```
 
-The script imports approximately 120 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
+The script imports 131 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. Boundary cases include a buyer with two addresses and one with none, a seller with no items and no ratings, a courier with no deliveries, both directions of the favourites M:N relationships, and a historical price snapshot. See [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence) for the decision each case supports; the fixture set is a coverage checklist, not a volume exercise. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
 
 ### Application — Integration Pending
 
