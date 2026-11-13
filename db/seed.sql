@@ -118,7 +118,11 @@ VALUES
     (94006, 90006, 90102, 93005, '2026-02-03 13:30:00', 'Confirmed', 'Self-Pickup'),
     (94007, 90007, 90102, NULL,  '2026-02-04 10:00:00', 'Cancelled', 'Self-Pickup'),
     (94008, 90004, 90103, NULL,  '2026-02-05 19:15:00', 'In Progress', 'Delivery'),
-    (94009, 90007, 90101, NULL,  '2026-02-06 20:00:00', 'Pending', 'Delivery')
+    (94009, 90007, 90101, NULL,  '2026-02-06 20:00:00', 'Pending', 'Delivery'),
+    (94101, 90001, 90101, NULL, '2026-11-12 12:00:00', 'Pending', 'Delivery'),
+    (94102, 90002, 90101, NULL, '2026-11-12 12:05:00', 'Pending', 'Delivery'),
+    (94103, 90005, 90101, NULL, '2026-11-12 12:10:00', 'Pending', 'Delivery'),
+    (94104, 90004, 90103, NULL, '2026-11-12 13:00:00', 'Confirmed', 'Delivery')
 ON DUPLICATE KEY UPDATE
     host_user_id = VALUES(host_user_id),
     seller_user_id = VALUES(seller_user_id),
@@ -128,7 +132,7 @@ ON DUPLICATE KEY UPDATE
     fulfillment_type = VALUES(fulfillment_type);
 
 INSERT INTO solo_orders (order_id) VALUES
-    (94001), (94004), (94007)
+    (94001), (94004), (94007), (94104)
 ON DUPLICATE KEY UPDATE order_id = VALUES(order_id);
 
 -- 2099 deadlines are always open, 2000 deadlines always locked, so the derived
@@ -139,9 +143,13 @@ INSERT INTO group_orders (order_id, deadline) VALUES
     (94005, '2099-12-31 23:59:59'),
     (94006, '2000-01-01 00:00:00'),
     (94008, '2099-12-31 23:59:59'),
-    (94009, '2000-01-01 00:00:00')
+    (94009, '2000-01-01 00:00:00'),
+    (94101, '2099-12-31 23:59:59'),
+    (94102, '2099-12-31 23:59:59'),
+    (94103, '2099-12-31 23:59:59')
 ON DUPLICATE KEY UPDATE deadline = VALUES(deadline);
 
+-- Group sizes of 1, 3 and 4 cover boundary cases for participant-based cost sharing.
 INSERT INTO group_order_participants (order_id, buyer_user_id) VALUES
     (94002, 90001),
     (94002, 90002),
@@ -154,7 +162,15 @@ INSERT INTO group_order_participants (order_id, buyer_user_id) VALUES
     (94008, 90004),
     (94008, 90005),
     (94009, 90007),
-    (94009, 90004)
+    (94009, 90004),
+    (94101, 90001),
+    (94102, 90002),
+    (94102, 90003),
+    (94102, 90004),
+    (94103, 90005),
+    (94103, 90006),
+    (94103, 90007),
+    (94103, 90008)
 ON DUPLICATE KEY UPDATE
     order_id = VALUES(order_id),
     buyer_user_id = VALUES(buyer_user_id);
@@ -182,6 +198,15 @@ INSERT INTO order_items (order_id, user_id, item_id, quantity, unit_price_snapsh
     (94008, 90004, 92005, 1, 72.00),
     (94008, 90005, 92006, 2, 46.00),
     (94009, 90007, 92001, 1, 68.00),
+    (94101, 90001, 92001, 1, 68.00),
+    (94102, 90002, 92001, 1, 68.00),
+    (94102, 90003, 92002, 1, 22.00),
+    (94102, 90004, 92001, 1, 68.00),
+    (94103, 90005, 92001, 1, 68.00),
+    (94103, 90006, 92002, 1, 22.00),
+    (94103, 90007, 92008, 1, 12.00),
+    (94103, 90008, 92001, 1, 68.00),
+    (94104, 90004, 92005, 1, 72.00),
     (94009, 90004, 92002, 1, 22.00)
 ON DUPLICATE KEY UPDATE
     quantity = VALUES(quantity),
@@ -220,8 +245,9 @@ INSERT INTO seller_ratings (buyer_user_id, seller_user_id, score) VALUES
     (90007, 90103, 2.5)
 ON DUPLICATE KEY UPDATE score = VALUES(score);
 
--- Only the six Delivery orders have a delivery; the three Self-Pickup orders have
+-- Delivery orders have a matching delivery; the three Self-Pickup orders have
 -- none. 90203 has no deliveries, covering the 0 side of COURIER ASSIGNED_TO.
+-- 94104 has a zero-fee delivery; 94101-94103 exercise 1 / 3 / 4 participants.
 INSERT INTO deliveries
     (delivery_id, order_id, courier_user_id, delivery_status, delivery_timestamp, shipping_fee)
 VALUES
@@ -230,7 +256,11 @@ VALUES
     (95003, 94004, 90202, 'Delivered', '2026-02-01 12:50:00', 10.00),
     (95004, 94005, 90201, 'Assigned', '2026-02-02 18:10:00', 12.00),
     (95005, 94008, 90202, 'Picked Up', '2026-02-05 19:30:00', 15.00),
-    (95006, 94009, 90201, 'Assigned', '2026-02-06 20:10:00', 12.00)
+    (95006, 94009, 90201, 'Assigned', '2026-02-06 20:10:00', 12.00),
+    (95101, 94101, 90201, 'Assigned', '2026-11-12 12:15:00', 10.00),
+    (95102, 94102, 90202, 'Assigned', '2026-11-12 12:20:00', 10.00),
+    (95103, 94103, 90201, 'Assigned', '2026-11-12 12:25:00', 10.02),
+    (95104, 94104, 90202, 'Assigned', '2026-11-12 13:05:00', 0.00)
 ON DUPLICATE KEY UPDATE
     order_id = VALUES(order_id),
     courier_user_id = VALUES(courier_user_id),

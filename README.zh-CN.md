@@ -88,9 +88,10 @@ PK = 主键，FK = 外键，UK = 唯一键。
 | `rating` 为派生属性，底层是 RATE M:N 关系 | ER01 回应 ① 蓝色 `buyer — rate — seller` 草图，划掉两个旧 `rating` 椭圆 | 7 个评分 → 4.1667 / 4.25 / 3.75；90104 经 LEFT JOIN 得 NULL | `seller_ratings`、`seller_rating_view` |
 | ORDER_ITEM 为 ID-dependent 弱实体，三段式标识键 | ER01 回应中 ADDS / CONTAINS / SELECTS 的绿色双线 | 94002 与 94005 中，92001 由两位不同买家各自添加 | `order_items` 复合主键 |
 | `group_status` 由截止时间派生，`completed` 归入 `order_status` | ER01 回应「group_status 作为 derived attribute from deadline」 | 2099 / 2000 两个截止时间；94009 已 `locked` 但仍是 `Pending` | `group_order_status_view` |
-| `shipping_fee` 挂在 DELIVERY；HAS_DELIVERY 为 1:1 且部分参与 | ER01 回应 DELIVERY 旁绿色「shipping_fee?」圈注 | 6 个配送单各有一条配送；3 个自取单没有 | `deliveries.order_id UNIQUE` |
+| `shipping_fee` 挂在 DELIVERY；HAS_DELIVERY 为 1:1 且部分参与 | ER01 回应 DELIVERY 旁绿色「shipping_fee?」圈注 | 10 个配送单各有一条配送；3 个自取单没有；其中一条配送费为 `$0.00` | `deliveries.order_id UNIQUE` |
 | 优惠券是每位买家的一次性券（APPLIES 1:1） | ER01 回应「really?」质疑券复用；ER03 想法 §5 方案 B | 4 张券各用一次、93004 过期未用、5 个订单 `coupon_id` 为 NULL | `orders.coupon_id UNIQUE`、`coupons.buyer_user_id` |
-| ORDERS 作为个人单 / 拼单的父类 | ER02 问题「shared features」与手绘 ISA 草图；ER03 想法 §4 | 9 个订单 = 3 个人单 + 6 拼单，共用 host、商家、状态字段 | `orders` + 两张子类表 |
+| ORDERS 作为个人单 / 拼单的父类 | ER02 问题「shared features」与手绘 ISA 草图；ER03 想法 §4 | 13 个订单 = 4 个个人单 + 9 个拼单，共用 host、商家、状态字段 | `orders` + 两张子类表 |
+| 拼单费用分摊覆盖参与人数边界 | ER03 特殊情况 sample data 建议 §2 | 94101 / 94102 / 94103 分别有 1 / 3 / 4 名参与者，配送费为 `$10.00` / `$10.00` / `$10.02` | `group_order_participants`、`deliveries.shipping_fee` |
 | 价格快照不受菜单改价影响 | ER02 问题 `unit price snapshot` | 94001 / 92003 保存 16.50，而当前价为 18.50 | `order_items.unit_price_snapshot` |
 | 参与约束的「0」侧真实存在 | ER01「一个骑手可接 0 或 ≥1 单」「新卖家尚未列出菜单项」 | 90203 无配送；90104 无商品、无评分 | 角色表、视图中的 `LEFT JOIN` |
 
@@ -131,7 +132,7 @@ SELECT order_id, deadline, group_status
 FROM group_order_status_view;
 ```
 
-导入 `db/seed.sql` 后，第一条查询应返回 `90001 = 68.00`、`90002 = 112.00`（合计 `180.00`）；第二条返回 3 个 `open` 和 3 个 `locked` 拼单。以上 SQL 按当前字段编写，尚未在本项目环境中连接真实 MySQL 实例运行验证。
+导入 `db/seed.sql` 后，第一条查询应返回 `90001 = 68.00`、`90002 = 112.00`（合计 `180.00`）；第二条返回 6 个 `open` 和 3 个 `locked` 拼单。以上 SQL 按当前字段编写，尚未在本项目环境中连接真实 MySQL 实例运行验证。
 
 ## Environment & Setup
 
@@ -167,7 +168,7 @@ mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
 bash db/seed.sh
 ```
 
-脚本会将 131 条相互关联的测试记录从 `db/seed.sql` 导入选定数据库，并提示输入 MySQL 密码。数据覆盖多个买家和商家、在售及停售商品、已使用及过期优惠券、个人单和不同截止状态的拼单、多种订单状态、配送和自取、评分、收藏及不同配送进度。在拼单 `94002` 和 `94005` 中，不同买家都添加了同一个菜品，体现同一拼单中多人可选择相同菜品的情况。边界情况还包括：有 2 个地址的买家与 0 个地址的买家、无商品且无评分的商家、无配送记录的骑手、收藏关系 M:N 的两个方向，以及与当前价不同的历史价格快照。各情况支撑哪项设计决策见 [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence)；这批数据是覆盖清单，不追求条数。数据使用专用 ID 和 upsert，重复运行会更新同一批测试记录，不会重复新增。可使用与 `db/setup.sh` 相同的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_DATABASE` 环境变量指定连接信息。测试账号的密码哈希是占位值，仅用于数据库测试。
+脚本会将 160 条相互关联的测试记录从 `db/seed.sql` 导入选定数据库，并提示输入 MySQL 密码。数据覆盖多个买家和商家、在售及停售商品、已使用及过期优惠券、个人单和不同截止状态的拼单、多种订单状态、配送和自取、评分、收藏及不同配送进度。在拼单 `94002` 和 `94005` 中，不同买家都添加了同一个菜品，体现同一拼单中多人可选择相同菜品的情况。拼单 `94101`–`94103` 覆盖 1、3、4 人参与及配送费余数分摊；个人单 `94104` 覆盖零运费配送。其他边界情况包括：有 2 个地址的买家与 0 个地址的买家、无商品且无评分的商家、无配送记录的骑手、收藏关系 M:N 的两个方向，以及与当前价不同的历史价格快照。各情况支撑哪项设计决策见 [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence)；这批数据是覆盖清单，不追求条数。数据使用专用 ID 和 upsert，重复运行会更新同一批测试记录，不会重复新增。可使用与 `db/setup.sh` 相同的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_DATABASE` 环境变量指定连接信息。测试账号的密码哈希是占位值，仅用于数据库测试。
 
 ### Application — Pending
 

@@ -51,8 +51,7 @@
 --      coupons.buyer_user_id = orders.host_user_id (a voucher is single-use
 --      and owned by exactly one buyer).
 --   6. After deadline (status 'locked'), no insert/update/delete of order items
---      or participants. If the host may lock early, add a locked_at column to
---      group_orders and derive status from deadline + locked_at.
+--      or participants.
 --   7. A solo order has no participants other than its placing buyer.
 --   8. One (buyer, seller) pair rates at most once (guaranteed by the composite
 --      PK). If repeated ratings per order are wanted, add order_id or rate_time.
