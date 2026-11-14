@@ -40,7 +40,7 @@ END
 -- 先建立订单，再建立团购和参与者，以满足外键及主持人参与规则。
 INSERT INTO orders
     (order_id, host_user_id, seller_user_id, coupon_id,
-     order_timestamp, order_status, fulfillment_type)
+     created_at, order_status, fulfillment_type)
 VALUES
     (94190, 90001, 90101, NULL,
      '2026-01-01 09:00:00', 'Pending', 'Self-Pickup');
@@ -65,7 +65,7 @@ ER03 对提前锁定的描述是可选项。若项目不准备实现 `locked_at`
 ```sql
 INSERT INTO orders
     (order_id, host_user_id, seller_user_id, coupon_id,
-     order_timestamp, order_status, fulfillment_type)
+     created_at, order_status, fulfillment_type)
 VALUES
     (94101, 90001, 90101, NULL, '2026-11-12 12:00:00', 'Pending', 'Delivery'),
     (94102, 90002, 90101, NULL, '2026-11-12 12:05:00', 'Pending', 'Delivery'),
@@ -128,7 +128,7 @@ VALUES
 ```sql
 INSERT INTO orders
     (order_id, host_user_id, seller_user_id, coupon_id,
-     order_timestamp, order_status, fulfillment_type)
+     created_at, order_status, fulfillment_type)
 VALUES
     (94104, 90004, 90103, NULL,
      '2026-11-12 13:00:00', 'Confirmed', 'Delivery');

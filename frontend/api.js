@@ -1,23 +1,48 @@
-// Mock data boundary. Replace these methods with fetch() calls when the backend is ready.
-// Browser data is demo state, not MySQL data. Never use this mock for real authentication.
-import {sellers,items} from './data.js';
-const KEY='group-eats-demo-v1';
-const initial=()=>({user:null,favorites:[],itemFavorites:[],cart:[],sellerId:null,group:null,orders:[],address:'The University of Hong Kong'});
-let state;
-try {state={...initial(),...JSON.parse(localStorage.getItem(KEY)||'{}')};}catch{state=initial();}
-function save(){localStorage.setItem(KEY,JSON.stringify(state));}
-function editable(){if(state.group&&(state.group.status==='locked'||state.group.deadline<=Date.now()))throw Error('This group order is locked.');}
-export const api={
- getState:()=>structuredClone(state),getSellers:()=>structuredClone(sellers),getItems:id=>structuredClone(items.filter(x=>x.seller_user_id===Number(id))),
- setAddress(value){state.address=value;save();},
- login(name){state.user={user_id:1,username:name};save();},logout(){state.user=null;save();},
- favorite(id,item=false){const key=item?'itemFavorites':'favorites';state[key]=state[key].includes(id)?state[key].filter(x=>x!==id):[...state[key],id];save();},
- add(item){editable();if(state.sellerId&&state.sellerId!==item.seller_user_id&&(state.cart.length||state.group))throw Error('Your basket belongs to another store. Clear it first.');state.sellerId=item.seller_user_id;const existing=state.cart.find(x=>x.item_id===item.item_id);if(existing)existing.quantity++;else state.cart.push({...item,quantity:1,unit_price_snapshot:item.price,user_id:1});save();},
- quantity(id,delta){editable();state.cart=state.cart.map(x=>x.item_id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0);save();},
- clear(){state.cart=[];state.sellerId=null;state.group=null;save();},
- createGroup(sellerId,minutes=30){if(state.cart.length&&state.sellerId!==sellerId)throw Error('Clear the basket from the other store first.');state.sellerId=sellerId;state.group={order_id:Date.now(),seller_user_id:sellerId,deadline:Date.now()+minutes*60000,status:'open',members:[{user_id:1,username:state.user?.username||'You'}],friendSubtotal:0};save();},
- joinDemo(){editable();if(!state.group||state.group.status!=='open')throw Error('This group is no longer open.');if(state.group.members.length>1)return;state.group.members.push({user_id:2,username:'Alex'});state.group.friendSubtotal=68;save();},
- lock(){if(!state.group||state.group.deadline<=Date.now())throw Error('This group order has expired.');if(!state.cart.length)throw Error('Add your food before locking the order.');state.group.status='locked';save();},
- checkout(){if(!state.cart.length)throw Error('Your basket is empty.');if(state.group&&state.group.status!=='locked')throw Error('Lock the group order before placing it.');const order={order_id:Date.now(),cart:structuredClone(state.cart),sellerId:state.sellerId,group:structuredClone(state.group),date:new Date().toISOString()};state.orders.unshift(order);state.cart=[];state.group=null;state.sellerId=null;save();return order;},
- reset(){state=initial();save();}
+// Real same-origin API. This module never falls back to mock/localStorage data.
+const BASE = '/api/v1';
+let token = null;
+export class APIError extends Error {
+  constructor(message, status, code) { super(message); this.status = status; this.code = code; }
+}
+async function request(path, {method = 'GET', data} = {}) {
+  if (method !== 'GET' && !token) await api.session();
+  let response;
+  try {
+    response = await fetch(BASE + path, {
+      method, credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', ...(method !== 'GET' ? {'X-CSRF-Token': token} : {})},
+      ...(data !== undefined ? {body: JSON.stringify(data)} : {})
+    });
+  } catch { throw new APIError('Cannot reach the server. Check your connection and try again.', 0, 'NETWORK_ERROR'); }
+  if (response.status === 204) return null;
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 401 || payload?.error?.code === 'CSRF_INVALID') token = null;
+    throw new APIError(payload?.error?.message || `Request failed (${response.status}).`, response.status, payload?.error?.code);
+  }
+  if (!payload || !('data' in payload)) throw new APIError('Unexpected server response.', 502, 'INVALID_RESPONSE');
+  return payload.data;
+}
+export const api = {
+  async session() { const s = await request('/auth/session'); token = s.csrf_token; return s.user; },
+  async login(email, password) { const s = await request('/auth/login', {method:'POST', data:{email,password}}); token = s.csrf_token; return s.user; },
+  async logout() { await request('/auth/logout', {method:'POST', data:{}}); token = null; },
+  sellers: () => request('/sellers'),
+  items: id => request(`/sellers/${id}/items`),
+  groups: scope => request(`/group-orders?scope=${encodeURIComponent(scope)}`),
+  orders: type => request(`/orders?type=${encodeURIComponent(type)}`),
+  order: id => request(`/orders/${id}`),
+  createIndividual: data => request('/orders', {method:'POST',data}),
+  setIndividualItem: (id,item,quantity) => request(`/orders/${id}/items/${item}`, {method:'PUT',data:{quantity}}),
+  removeIndividualItem: (id,item) => request(`/orders/${id}/items/${item}`, {method:'DELETE'}),
+  placeIndividual: id => request(`/orders/${id}/place`, {method:'POST',data:{}}),
+  cancelIndividual: id => request(`/orders/${id}/cancel`, {method:'POST',data:{}}),
+  group: id => request(`/group-orders/${id}`),
+  create: data => request('/group-orders', {method:'POST', data}),
+  join: id => request(`/group-orders/${id}/members/me`, {method:'PUT', data:{}}),
+  leave: id => request(`/group-orders/${id}/members/me`, {method:'DELETE'}),
+  setItem: (id,item,quantity) => request(`/group-orders/${id}/items/${item}`, {method:'PUT',data:{quantity}}),
+  removeItem: (id,item) => request(`/group-orders/${id}/items/${item}`, {method:'DELETE'}),
+  cancel: id => request(`/group-orders/${id}/cancel`, {method:'POST',data:{}}),
+  place: id => request(`/group-orders/${id}/place`, {method:'POST',data:{}})
 };
