@@ -1,41 +1,35 @@
-# Group Eats frontend
+# foodpanda frontend
 
 **English** | [简体中文](README.zh-CN.md)
 
-Foodpanda-inspired, responsive student-project prototype. Plain HTML, CSS and JavaScript modules; no build step or npm dependencies.
+HTML/CSS/JavaScript served by Flask, with real MySQL data through `/api/v1`. No npm build is required.
 
-## Run locally
+## Run
 
-From the repository root:
+Follow the [project setup](../README.md#run-the-integrated-application), then run from the repository root:
 
 ```bash
-python3 -m http.server 5173 --directory frontend --bind 127.0.0.1
+python app.py
 ```
 
-Open http://127.0.0.1:5173. Use an HTTP server; opening `index.html` directly does not load JavaScript modules reliably.
+Open http://127.0.0.1:5000. A static server or opening index.html directly cannot provide the API.
 
-## Included
+## Features
 
-- Restaurant and grocery browsing, search, cuisine filters, sorting and favourites.
-- Store menus, item favourites, basket quantities and removal.
-- Demo sign-in, editable delivery address, pickup mode and local order history.
-- Group creation, deadline, simulated friend joining, delivery-fee splitting, locking and cancellation.
-- Responsive desktop/mobile views. Demo state persists in localStorage.
+- Buyer login/logout, store/menu browsing, search and filters.
+- Individual orders: create, add/change/remove items, place or cancel drafts.
+- Group orders: create/share/join/leave, manage your own items, view member totals.
+- Delivery or pickup; shipping split in integer cents, remainder assigned to the host.
+- A host can submit a nonempty group before or after its deadline; joining/editing stops at the deadline or submission.
+- Orders shows the current buyer’s individual and joined group history, including Completed, with filters, counts and refresh.
+- Submitted orders are read-only and complete after a simulated 15–60 minutes. Pages poll every 15 seconds.
 
-All orders, accounts and group membership are browser-local simulations. There is no backend, MySQL connection, real payment, delivery or cross-device invitation. The invite action copies a demo URL; use “Simulate a friend joining” to preview another member. Other business rules remain backend work.
+Use Alice and Bob in separate browser profiles or normal/private windows; ordinary tabs share a login. Credentials, migration commands, lifecycle details and tests are in the [project guide](../README.md). Email starts blank at login.
 
-## Backend handoff
+## Files and assets
 
-`data.js` holds sample sellers and menu items. `api.js` is the replaceable data-access boundary; `app.js` renders the UI and handles interaction. Replace the mock methods with backend requests and update callers to await responses. Validate permissions, prices, membership, deadlines and transactions on the server.
+`api.js` handles asynchronous requests and CSRF; `app.js` renders API results; `styles.css` provides layout. Authentication, orders and membership are not stored in localStorage; API failures show errors.
 
-Core identifiers match the schema: `user_id`, `seller_user_id`, `item_id`, `item_name`, `quantity` and `unit_price_snapshot`. UI fields such as images, delivery estimates and descriptions are presentation fixtures. Early group locking, signup and complete checkout rules need an agreed backend contract; the frontend mock does not establish a database migration.
+Menus and prices come from the seeded database; local photos are mapped to actual IDs. Image/icon/QR sources are in [assets/SOURCES.md](assets/SOURCES.md). Optional Google Fonts fall back to system fonts offline. The existing panda SVG comes from Simple Icons. This is a student prototype.
 
-## Assets
-
-Local food photographs are downloaded from Unsplash. See `assets/SOURCES.md` for source URLs. Optional Google Fonts are DM Sans and Manrope; system fonts are used offline. Visual reference: https://www.foodpanda.hk/. Group Eats is a student prototype and is not affiliated with Foodpanda.
-
-## Brand and sample listings
-
-The interface displays foodpanda branding using the existing panda mark from Simple Icons, not a generated or redrawn mascot. See `assets/SOURCES.md` for provenance. The mock catalog contains 18 restaurants and 4 grocery stores, each with a menu. Names, prices, ratings and offers are demonstration data, not live listings. This remains the Group Eats course project.
-
-The listing page places search at the upper right and an app-download QR/link in the left sidebar. The QR opens the official Hong Kong download page.
+[API contract](../docs/API.md) · [中文接口约定](../docs/API.zh-CN.md)

@@ -9,21 +9,21 @@
 START TRANSACTION;
 
 INSERT INTO users (user_id, username, email, phone_number, password_hash) VALUES
-    (90001, 'Test Buyer Alice', 'alice.test@example.invalid', '+85200009001', 'test-only-hash-90001'),
-    (90002, 'Test Buyer Bob', 'bob.test@example.invalid', '+85200009002', 'test-only-hash-90002'),
-    (90003, 'Test Buyer Carol', 'carol.test@example.invalid', '+85200009003', 'test-only-hash-90003'),
-    (90004, 'Test Buyer David', 'david.test@example.invalid', '+85200009004', 'test-only-hash-90004'),
-    (90005, 'Test Buyer Emma', 'emma.test@example.invalid', '+85200009005', 'test-only-hash-90005'),
-    (90006, 'Test Buyer Frank', 'frank.test@example.invalid', '+85200009006', 'test-only-hash-90006'),
-    (90007, 'Test Buyer Grace', 'grace.test@example.invalid', '+85200009007', 'test-only-hash-90007'),
-    (90008, 'Test Buyer Helen', 'helen.test@example.invalid', '+85200009008', 'test-only-hash-90008'),
-    (90101, 'Test Restaurant', 'restaurant.test@example.invalid', '+85200009101', 'test-only-hash-90101'),
-    (90102, 'Test Grocery Store', 'grocery.test@example.invalid', '+85200009102', 'test-only-hash-90102'),
-    (90103, 'Test Noodle Shop', 'noodles.test@example.invalid', '+85200009103', 'test-only-hash-90103'),
-    (90104, 'Test New Seller', 'newseller.test@example.invalid', '+85200009104', 'test-only-hash-90104'),
-    (90201, 'Test Courier', 'courier.test@example.invalid', '+85200009201', 'test-only-hash-90201'),
-    (90202, 'Test Courier Two', 'courier2.test@example.invalid', '+85200009202', 'test-only-hash-90202'),
-    (90203, 'Test Courier Three', 'courier3.test@example.invalid', '+85200009203', 'test-only-hash-90203')
+    (90001, 'Alice Wong', 'alice@example.com', '+85200009001', 'test-only-hash-90001'),
+    (90002, 'Bob Chan', 'bob@example.com', '+85200009002', 'test-only-hash-90002'),
+    (90003, 'Carol Lee', 'carol@example.com', '+85200009003', 'test-only-hash-90003'),
+    (90004, 'David Lam', 'david@example.com', '+85200009004', 'test-only-hash-90004'),
+    (90005, 'Emma Cheung', 'emma@example.com', '+85200009005', 'test-only-hash-90005'),
+    (90006, 'Frank Ho', 'frank@example.com', '+85200009006', 'test-only-hash-90006'),
+    (90007, 'Grace Lau', 'grace@example.com', '+85200009007', 'test-only-hash-90007'),
+    (90008, 'Helen Ng', 'helen@example.com', '+85200009008', 'test-only-hash-90008'),
+    (90101, 'Harbour Cafe', 'restaurant@example.com', '+85200009101', 'test-only-hash-90101'),
+    (90102, 'Fresh Market', 'grocery@example.com', '+85200009102', 'test-only-hash-90102'),
+    (90103, 'Noodle Lane', 'noodles@example.com', '+85200009103', 'test-only-hash-90103'),
+    (90104, 'Green Table', 'newseller@example.com', '+85200009104', 'test-only-hash-90104'),
+    (90201, 'Jason Yip', 'courier@example.com', '+85200009201', 'test-only-hash-90201'),
+    (90202, 'Ryan Tang', 'courier2@example.com', '+85200009202', 'test-only-hash-90202'),
+    (90203, 'Chris Lo', 'courier3@example.com', '+85200009203', 'test-only-hash-90203')
 ON DUPLICATE KEY UPDATE
     username = VALUES(username),
     email = VALUES(email),
@@ -39,9 +39,9 @@ INSERT INTO sellers (user_id) VALUES
 ON DUPLICATE KEY UPDATE user_id = VALUES(user_id);
 
 INSERT INTO couriers (user_id, vehicle_type, license_plate_number, availability_status) VALUES
-    (90201, 'Bicycle', 'TEST-90201', 'Available'),
-    (90202, 'Motorcycle', 'TEST-90202', 'On Delivery'),
-    (90203, 'Bicycle', 'TEST-90203', 'Available')
+    (90201, 'Bicycle', 'BIKE-JY', 'Available'),
+    (90202, 'Motorcycle', 'HK 6382', 'On Delivery'),
+    (90203, 'Bicycle', 'BIKE-CL', 'Available')
 ON DUPLICATE KEY UPDATE
     vehicle_type = VALUES(vehicle_type),
     license_plate_number = VALUES(license_plate_number),
@@ -50,25 +50,25 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO restaurants (user_id, cuisine_type, active_status) VALUES
     (90101, 'Hong Kong Cafe', 'Active'),
     (90103, 'Noodles', 'Active'),
-    (90104, 'Test Cuisine', 'Inactive')
+    (90104, 'Vegetarian', 'Inactive')
 ON DUPLICATE KEY UPDATE
     cuisine_type = VALUES(cuisine_type),
     active_status = VALUES(active_status);
 
 INSERT INTO grocery_stores (user_id, store_category) VALUES
-    (90102, 'Test Grocery')
+    (90102, 'Fresh produce & pantry')
 ON DUPLICATE KEY UPDATE store_category = VALUES(store_category);
 
 -- 90001 has two addresses, 90008 has none: both sides of SAVES 1:N / partial participation.
 INSERT INTO addresses (address_id, buyer_user_id, address_line, label) VALUES
-    (91001, 90001, 'Test Address 1, Central', 'Home'),
-    (91002, 90002, 'Test Address 2, Sheung Wan', 'Home'),
-    (91003, 90003, 'Test Address 3, Wan Chai', 'Work'),
-    (91004, 90004, 'Test Address 4, Kowloon City', 'Home'),
-    (91005, 90005, 'Test Address 5, Mong Kok', 'Home'),
-    (91006, 90006, 'Test Address 6, Causeway Bay', 'Work'),
-    (91007, 90007, 'Test Address 7, Tai Wai', 'Home'),
-    (91008, 90001, 'Test Address 1B, Central', 'Work')
+    (91001, 90001, '18 Queen''s Road Central, Central', 'Home'),
+    (91002, 90002, '60 Bonham Strand, Sheung Wan', 'Home'),
+    (91003, 90003, '15 Hennessy Road, Wan Chai', 'Work'),
+    (91004, 90004, '22 Nga Tsin Wai Road, Kowloon City', 'Home'),
+    (91005, 90005, '80 Argyle Street, Mong Kok', 'Home'),
+    (91006, 90006, '30 Yee Wo Street, Causeway Bay', 'Work'),
+    (91007, 90007, '12 Chik Fai Street, Tai Wai', 'Home'),
+    (91008, 90001, '100 Des Voeux Road Central, Central', 'Work')
 ON DUPLICATE KEY UPDATE
     buyer_user_id = VALUES(buyer_user_id),
     address_line = VALUES(address_line),
@@ -77,15 +77,15 @@ ON DUPLICATE KEY UPDATE
 -- 90104 is a seller with no menu items and no ratings (partial participation on
 -- OFFERS and RATE); seller_rating_view must still return a row with a NULL rating.
 INSERT INTO menu_items (item_id, seller_user_id, item_name, price, availability_status) VALUES
-    (92001, 90101, 'Test Set Meal', 68.00, 'Available'),
-    (92002, 90101, 'Test Milk Tea', 22.00, 'Available'),
-    (92003, 90102, 'Test Apples', 18.50, 'Available'),
-    (92004, 90102, 'Test Bread', 25.00, 'Unavailable'),
-    (92005, 90103, 'Test Beef Noodles', 72.00, 'Available'),
-    (92006, 90103, 'Test Dumplings', 46.00, 'Available'),
-    (92007, 90102, 'Test Orange Juice', 16.00, 'Available'),
-    (92008, 90101, 'Test Egg Tart', 12.00, 'Available'),
-    (92009, 90103, 'Test Chili Oil', 9.50, 'Unavailable')
+    (92001, 90101, 'Soy Sauce Chicken Rice', 68.00, 'Available'),
+    (92002, 90101, 'Hong Kong Milk Tea', 22.00, 'Available'),
+    (92003, 90102, 'Fuji Apples', 18.50, 'Available'),
+    (92004, 90102, 'Wholemeal Bread', 25.00, 'Unavailable'),
+    (92005, 90103, 'Braised Beef Noodle Soup', 72.00, 'Available'),
+    (92006, 90103, 'Pork and Chive Dumplings', 46.00, 'Available'),
+    (92007, 90102, 'Fresh Orange Juice', 16.00, 'Available'),
+    (92008, 90101, 'Classic Egg Tart', 12.00, 'Available'),
+    (92009, 90103, 'House Chilli Oil', 9.50, 'Unavailable')
 ON DUPLICATE KEY UPDATE
     seller_user_id = VALUES(seller_user_id),
     item_name = VALUES(item_name),
@@ -95,11 +95,11 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO coupons
     (coupon_id, buyer_user_id, coupon_code, discount_value, minimum_spend_threshold, expiry_date)
 VALUES
-    (93001, 90001, 'TEST-ALICE-10', 10.00, 50.00, '2099-12-31 23:59:59'),
-    (93002, 90003, 'TEST-CAROL-5', 5.00, 20.00, '2099-12-31 23:59:59'),
-    (93003, 90004, 'TEST-DAVID-15', 15.00, 70.00, '2099-12-31 23:59:59'),
-    (93004, 90005, 'TEST-EMMA-EXPIRED', 8.00, 30.00, '2020-01-01 00:00:00'),
-    (93005, 90006, 'TEST-FRANK-5', 5.00, 0.00, '2099-12-31 23:59:59')
+    (93001, 90001, 'WELCOME10', 10.00, 50.00, '2099-12-31 23:59:59'),
+    (93002, 90003, 'COFFEE5', 5.00, 20.00, '2099-12-31 23:59:59'),
+    (93003, 90004, 'DINNER15', 15.00, 70.00, '2099-12-31 23:59:59'),
+    (93004, 90005, 'SUMMER8', 8.00, 30.00, '2020-01-01 00:00:00'),
+    (93005, 90006, 'FRESH5', 5.00, 0.00, '2099-12-31 23:59:59')
 ON DUPLICATE KEY UPDATE
     buyer_user_id = VALUES(buyer_user_id),
     coupon_code = VALUES(coupon_code),
@@ -108,7 +108,7 @@ ON DUPLICATE KEY UPDATE
     expiry_date = VALUES(expiry_date);
 
 INSERT INTO orders
-    (order_id, host_user_id, seller_user_id, coupon_id, order_timestamp, order_status, fulfillment_type)
+    (order_id, host_user_id, seller_user_id, coupon_id, created_at, order_status, fulfillment_type)
 VALUES
     (94001, 90003, 90102, 93002, '2026-01-15 12:00:00', 'Completed', 'Self-Pickup'),
     (94002, 90001, 90101, 93001, '2026-01-16 18:30:00', 'In Progress', 'Delivery'),
@@ -127,7 +127,7 @@ ON DUPLICATE KEY UPDATE
     host_user_id = VALUES(host_user_id),
     seller_user_id = VALUES(seller_user_id),
     coupon_id = VALUES(coupon_id),
-    order_timestamp = VALUES(order_timestamp),
+    created_at = VALUES(created_at),
     order_status = VALUES(order_status),
     fulfillment_type = VALUES(fulfillment_type);
 
