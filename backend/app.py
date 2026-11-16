@@ -144,12 +144,16 @@ def group_detail(order_id):
         m['item_subtotal_cents'] = sum(i['line_total_cents'] for i in lines if i['user_id'] == m['buyer_user_id'])
         m['shipping_share_cents'] = base + (remainder if m['is_host'] else 0)
         m['total_cents'] = m['item_subtotal_cents'] + m['shipping_share_cents']
+        m['discount_cents'] = 0
+    food_cents = sum(i['line_total_cents'] for i in lines)
+    host_member = next((m for m in members if m['is_host']), None)
+    coupon = coupon_fields(record, food_cents, host_member)
     preview.update(created_at=stamp(record['created_at']),
-                   fulfillment_type=record['fulfillment_type'], coupon_id=record['coupon_id'],
-                   currency='HKD', coupon_applied=False, summary_basis='before_coupons',
-                   shipping_fee_cents=fee, can_edit=open_order,
+                   fulfillment_type=record['fulfillment_type'],
+                   currency='HKD', shipping_fee_cents=fee, can_edit=open_order,
                    can_leave=open_order and not is_host, can_cancel=open_order and is_host,
-                   members=members, items=lines)
+                   can_apply_coupon=open_order and is_host,
+                   members=members, items=lines, **coupon)
     preview.update(timing_fields(record))
     preview['can_place'] = is_host and record['order_status'] == 'Pending' and bool(lines)
     return preview
@@ -173,11 +177,14 @@ def individual_detail(order_id):
         line['unit_price_snapshot_cents'] = cents(line.pop('unit_price_snapshot'))
         line['line_total_cents'] = line['quantity'] * line['unit_price_snapshot_cents']
     timestamp = record['created_at']
+    food_cents = sum(i['line_total_cents'] for i in lines)
+    coupon = coupon_fields(record, food_cents)
     record.update(created_at=stamp(timestamp), order_type='individual', currency='HKD',
-        items=lines, item_subtotal_cents=sum(i['line_total_cents'] for i in lines),
+        items=lines, item_subtotal_cents=food_cents,
         shipping_fee_cents=cents(delivery['shipping_fee']) if record['fulfillment_type']=='Delivery' else 0,
-        coupon_applied=False, summary_basis='before_coupons', can_edit=record['order_status']=='Pending', can_cancel=record['order_status']=='Pending')
-    record['total_cents'] = record['item_subtotal_cents'] + record['shipping_fee_cents']
+        can_edit=record['order_status']=='Pending', can_cancel=record['order_status']=='Pending',
+        can_apply_coupon=record['order_status']=='Pending', **coupon)
+    record['total_cents'] = record['item_subtotal_cents'] + record['shipping_fee_cents'] - record['discount_cents']
     record.update(timing_fields(record))
     record['can_place'] = record['can_edit'] and bool(lines)
     return record
@@ -234,6 +241,88 @@ def solo_record(order_id, lock=False):
 def editable_individual(record):
     if record['order_status'] != 'Pending':
         fail(409, 'ORDER_NOT_EDITABLE', 'This order is already placed or cancelled.')
+
+
+def food_subtotal_cents(order_id):
+    lines = query('SELECT quantity,unit_price_snapshot FROM order_items WHERE order_id=%s', (order_id,))
+    return sum(line['quantity'] * cents(line['unit_price_snapshot']) for line in lines)
+
+
+def coupon_row(coupon_id):
+    if not coupon_id:
+        return None
+    return query('SELECT * FROM coupons WHERE coupon_id=%s', (coupon_id,), one=True)
+
+
+def coupon_in_use(coupon_id, exclude_order_id=None):
+    row = query('SELECT order_id FROM orders WHERE coupon_id=%s', (coupon_id,), one=True)
+    if not row:
+        return False
+    return int(row['order_id']) != int(exclude_order_id or 0)
+
+
+def validate_coupon(coupon, owner_id, food_cents, order_id=None):
+    if not coupon:
+        fail(404, 'COUPON_NOT_FOUND', 'Coupon not found.')
+    if int(coupon['buyer_user_id']) != int(owner_id):
+        fail(403, 'COUPON_NOT_OWNED', 'This coupon belongs to another buyer.')
+    if coupon['expiry_date'] <= now():
+        fail(409, 'COUPON_EXPIRED', 'This coupon has expired.')
+    if coupon_in_use(coupon['coupon_id'], order_id):
+        fail(409, 'COUPON_USED', 'This coupon has already been used.')
+    minimum = cents(coupon['minimum_spend_threshold'])
+    if food_cents < minimum:
+        fail(409, 'COUPON_MIN_SPEND', f'Add more food to reach the HK$ {minimum / 100:.2f} minimum spend.')
+    return coupon
+
+
+def attach_coupon(record, coupon_code):
+    if not isinstance(coupon_code, str) or not coupon_code.strip():
+        fail(400, 'VALIDATION_ERROR', 'Enter a coupon code.')
+    coupon = query('SELECT * FROM coupons WHERE buyer_user_id=%s AND coupon_code=%s',
+                   (g.user['user_id'], coupon_code.strip()), one=True)
+    validate_coupon(coupon, g.user['user_id'], food_subtotal_cents(record['order_id']), record['order_id'])
+    execute('UPDATE orders SET coupon_id=%s WHERE order_id=%s', (coupon['coupon_id'], record['order_id']))
+
+
+def clear_coupon(order_id):
+    execute('UPDATE orders SET coupon_id=NULL WHERE order_id=%s', (order_id,))
+
+
+def require_attached_coupon(record):
+    coupon = coupon_row(record.get('coupon_id'))
+    if not coupon:
+        return
+    validate_coupon(coupon, record['host_user_id'], food_subtotal_cents(record['order_id']), record['order_id'])
+
+
+def coupon_fields(record, food_cents, host_member=None):
+    coupon = coupon_row(record.get('coupon_id'))
+    if not coupon:
+        return {'coupon_id': None, 'coupon_code': None, 'coupon_applied': False,
+                'discount_cents': 0, 'summary_basis': 'before_coupons'}
+    discount = min(cents(coupon['discount_value']), food_cents)
+    if host_member is not None:
+        discount = min(discount, host_member['total_cents'])
+        host_member['total_cents'] -= discount
+        host_member['discount_cents'] = discount
+    return {'coupon_id': int(coupon['coupon_id']), 'coupon_code': coupon['coupon_code'],
+            'coupon_applied': True, 'discount_cents': discount, 'summary_basis': 'after_coupons'}
+
+
+def serialize_coupon(row):
+    used = coupon_in_use(row['coupon_id'])
+    expired = row['expiry_date'] <= now()
+    return {
+        'coupon_id': int(row['coupon_id']),
+        'coupon_code': row['coupon_code'],
+        'discount_cents': cents(row['discount_value']),
+        'minimum_spend_cents': cents(row['minimum_spend_threshold']),
+        'expiry_date': stamp(row['expiry_date']),
+        'used': used,
+        'expired': expired,
+        'usable': (not used) and (not expired),
+    }
 
 
 def create_app(config=None):
@@ -448,6 +537,7 @@ def create_app(config=None):
                     fail(409,'INVALID_ORDER','Order items need to be corrected before submission.')
                 if record['fulfillment_type']=='Delivery' and not query('SELECT delivery_id FROM deliveries WHERE order_id=%s',(order_id,),one=True):
                     fail(409,'INVALID_ORDER','Delivery information is missing.')
+                require_attached_coupon(record)
                 execute("UPDATE orders SET order_status='Confirmed' WHERE order_id=%s",(order_id,))
             schedule_completion(order_id)
         return jsonify(data=individual_detail(order_id))
@@ -460,7 +550,7 @@ def create_app(config=None):
             record=solo_record(order_id,lock=True)
             if record['order_status']!='Cancelled':
                 editable_individual(record)
-                execute("UPDATE orders SET order_status='Cancelled' WHERE order_id=%s",(order_id,))
+                execute("UPDATE orders SET order_status='Cancelled', coupon_id=NULL WHERE order_id=%s",(order_id,))
         return jsonify(data=individual_detail(order_id))
 
     @app.post(PREFIX + '/group-orders')
@@ -550,8 +640,94 @@ def create_app(config=None):
                     fail(409, 'INVALID_ORDER', 'Order membership needs to be corrected before submission.')
                 if record['fulfillment_type'] == 'Delivery' and not query('SELECT delivery_id FROM deliveries WHERE order_id=%s', (order_id,), one=True):
                     fail(409, 'INVALID_ORDER', 'Delivery information is missing.')
+                require_attached_coupon(record)
                 execute("UPDATE orders SET order_status='Confirmed' WHERE order_id=%s", (order_id,))
             schedule_completion(order_id)
+        return jsonify(data=group_detail(order_id))
+
+    @app.get(PREFIX + '/favorites')
+    @buyer
+    def list_favorites():
+        seller_rows = query('SELECT seller_user_id FROM favorite_sellers WHERE buyer_user_id=%s ORDER BY saved_time DESC', (g.user['user_id'],))
+        item_rows = query('''SELECT m.item_id,m.seller_user_id,m.item_name,m.price,m.availability_status,u.username AS seller_name
+            FROM favorite_items f JOIN menu_items m ON m.item_id=f.item_id
+            JOIN users u ON u.user_id=m.seller_user_id
+            WHERE f.buyer_user_id=%s ORDER BY f.saved_time DESC''', (g.user['user_id'],))
+        for row in item_rows:
+            row['price_cents'] = cents(row.pop('price'))
+        return jsonify(data={
+            'sellers': [seller_record(row['seller_user_id']) for row in seller_rows],
+            'items': item_rows,
+        })
+
+    @app.route(PREFIX + '/favorites/sellers/<int:seller_id>', methods=['PUT', 'DELETE'])
+    @buyer
+    def favorite_seller(seller_id):
+        integer(seller_id)
+        if request.method == 'PUT' or request.content_length:
+            body()
+        seller_record(seller_id)
+        with transaction():
+            if request.method == 'PUT':
+                execute('INSERT INTO favorite_sellers(buyer_user_id,seller_user_id) VALUES(%s,%s) ON DUPLICATE KEY UPDATE saved_time=CURRENT_TIMESTAMP', (g.user['user_id'], seller_id))
+            else:
+                execute('DELETE FROM favorite_sellers WHERE buyer_user_id=%s AND seller_user_id=%s', (g.user['user_id'], seller_id))
+        if request.method == 'PUT':
+            return jsonify(data={'saved': True})
+        return '', 204
+
+    @app.route(PREFIX + '/favorites/items/<int:item_id>', methods=['PUT', 'DELETE'])
+    @buyer
+    def favorite_item(item_id):
+        integer(item_id)
+        if request.method == 'PUT' or request.content_length:
+            body()
+        item = query('SELECT item_id FROM menu_items WHERE item_id=%s', (item_id,), one=True)
+        if not item:
+            fail(404, 'NOT_FOUND', 'Item not found.')
+        with transaction():
+            if request.method == 'PUT':
+                execute('INSERT INTO favorite_items(buyer_user_id,item_id) VALUES(%s,%s) ON DUPLICATE KEY UPDATE saved_time=CURRENT_TIMESTAMP', (g.user['user_id'], item_id))
+            else:
+                execute('DELETE FROM favorite_items WHERE buyer_user_id=%s AND item_id=%s', (g.user['user_id'], item_id))
+        if request.method == 'PUT':
+            return jsonify(data={'saved': True})
+        return '', 204
+
+    @app.get(PREFIX + '/coupons')
+    @buyer
+    def list_coupons():
+        rows = query('SELECT * FROM coupons WHERE buyer_user_id=%s ORDER BY expiry_date, coupon_id', (g.user['user_id'],))
+        return jsonify(data=[serialize_coupon(row) for row in rows])
+
+    @app.route(PREFIX + '/orders/<int:order_id>/coupon', methods=['PUT', 'DELETE'])
+    @buyer
+    def individual_coupon(order_id):
+        with transaction():
+            record = solo_record(order_id, lock=True)
+            editable_individual(record)
+            if request.method == 'PUT':
+                attach_coupon(record, body(('coupon_code',))['coupon_code'])
+            else:
+                if request.content_length:
+                    body()
+                clear_coupon(order_id)
+        return jsonify(data=individual_detail(order_id))
+
+    @app.route(PREFIX + '/group-orders/<int:order_id>/coupon', methods=['PUT', 'DELETE'])
+    @buyer
+    def group_coupon(order_id):
+        with transaction():
+            record = group_record(order_id, lock=True)
+            editable(record)
+            if record['host_user_id'] != g.user['user_id']:
+                fail(403, 'HOST_ONLY', 'Only the host can apply a coupon.')
+            if request.method == 'PUT':
+                attach_coupon(record, body(('coupon_code',))['coupon_code'])
+            else:
+                if request.content_length:
+                    body()
+                clear_coupon(order_id)
         return jsonify(data=group_detail(order_id))
 
     @app.post(PREFIX + '/group-orders/<int:order_id>/cancel')
@@ -564,7 +740,7 @@ def create_app(config=None):
                 fail(403, 'HOST_ONLY', 'Only the host can cancel this group.')
             if record['order_status'] != 'Cancelled':
                 editable(record)
-                execute("UPDATE orders SET order_status='Cancelled' WHERE order_id=%s", (order_id,))
+                execute("UPDATE orders SET order_status='Cancelled', coupon_id=NULL WHERE order_id=%s", (order_id,))
         return jsonify(data=group_detail(order_id))
 
     @app.get('/')

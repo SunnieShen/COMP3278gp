@@ -8,6 +8,19 @@ const image = (id,alt) => `<img src="assets/${photos[id] || 'salad'}.jpg" alt="$
 let user = null, sellers = [], service = 'delivery', category = 'All', search = '', sort = 'recommended', topRated = false;
 let individual = null, activeOrderType = null;
 let group = null, groupMenu = [], routeVersion = 0, busy = false, previousFocus = null;
+let favorites = {sellers: [], items: []}, myCoupons = [];
+const savedSeller = id => favorites.sellers.some(s => s.seller_user_id === id);
+const savedItem = id => favorites.items.some(i => i.item_id === id);
+function heartButton(kind, id, name) {
+  const saved = kind === 'seller' ? savedSeller(id) : savedItem(id);
+  const attr = kind === 'seller' ? 'data-fav-seller' : 'data-fav-item';
+  return `<button type="button" class="heart ${saved?'saved':''}" ${attr}="${id}" aria-pressed="${saved}" aria-label="${saved?'Remove':'Save'} ${esc(name)}">♥</button>`;
+}
+async function loadBuyerExtras() {
+  if (!user) { favorites = {sellers: [], items: []}; myCoupons = []; return; }
+  const [fav, coupons] = await Promise.all([api.favorites(), api.coupons()]);
+  favorites = fav; myCoupons = coupons;
+}
 function toast(message) {
   $('#toast').textContent = message; $('#toast').classList.add('show');
   clearTimeout(toast.timer); toast.timer = setTimeout(() => $('#toast').classList.remove('show'), 4500);
@@ -27,7 +40,7 @@ function loginModal() {
   modal('Log in to foodpanda', `<p>Log in to order with your friends.</p><form id="login-form"><label>Email<input name="email" type="email" autocomplete="username" required maxlength="254" placeholder="Email address"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><p class="muted">Welcome back. Your next meal is waiting.</p><p class="form-error" role="alert"></p><button class="primary full spaced">Log in</button></form>`);
 }
 function card(s) {
-  return `<article class="store-card"><a class="store-photo" href="#/store/${s.seller_user_id}">${image(s.seller_user_id,s.username)}${s.active_status==='Inactive'?'<span class="offer">Currently inactive</span>':''}</a><a class="store-info" href="#/store/${s.seller_user_id}"><div><h3>${esc(s.username)}</h3><span class="rating">★ <b>${s.rating===null?'New':Number(s.rating).toFixed(1)}</b></span></div><p>${esc(s.cuisine_type || s.store_category || s.kind)}</p><p>Browse the menu</p></a></article>`;
+  return `<article class="store-card">${heartButton('seller',s.seller_user_id,s.username)}<a class="store-photo" href="#/store/${s.seller_user_id}">${image(s.seller_user_id,s.username)}${s.active_status==='Inactive'?'<span class="offer">Currently inactive</span>':''}</a><a class="store-info" href="#/store/${s.seller_user_id}"><div><h3>${esc(s.username)}</h3><span class="rating">★ <b>${s.rating===null?'New':Number(s.rating).toFixed(1)}</b></span></div><p>${esc(s.cuisine_type || s.store_category || s.kind)}</p><p>Browse the menu</p></a></article>`;
 }
 function results() {
   let rows = sellers.filter(s => (service==='grocery'?s.kind==='grocery':s.kind==='restaurant') && (category==='All'||(s.cuisine_type||s.store_category)===category) && (!topRated||s.rating>=4.0) && `${s.username} ${s.cuisine_type||s.store_category||''}`.toLowerCase().includes(search.toLowerCase()));
@@ -44,14 +57,14 @@ function menuCards(menu, mode=false) {
     const own=active?.items?.find(line=>line.item_id===i.item_id&&(isSolo||line.user_id===user?.user_id));
     const available=i.availability_status==='Available';
     const enabled=mode&&active?.can_edit&&available&&(!own||own.quantity<99);
-    return `<article class="menu-card"><div><h3>${esc(i.item_name)}</h3><p>${available?'Freshly prepared · Available':'Currently unavailable'}</p><strong>${money(i.price_cents)}</strong></div><div class="menu-image">${image(i.item_id,i.item_name)}${mode?`<button ${isSolo?'data-solo-add':'data-add'}="${i.item_id}" ${enabled?'':'disabled'} aria-label="Add ${esc(i.item_name)}">+</button>`:''}</div></article>`;
+    return `<article class="menu-card"><div><h3>${esc(i.item_name)} ${heartButton('item',i.item_id,i.item_name)}</h3><p>${available?'Freshly prepared · Available':'Currently unavailable'}</p><strong>${money(i.price_cents)}</strong></div><div class="menu-image">${image(i.item_id,i.item_name)}${mode?`<button ${isSolo?'data-solo-add':'data-add'}="${i.item_id}" ${enabled?'':'disabled'} aria-label="Add ${esc(i.item_name)}">+</button>`:''}</div></article>`;
   }).join('')||'<div class="empty"><h3>No items listed yet</h3><p>This seller has not added any menu items.</p></div>';
 }
 async function storePage(id,version) {
   const s=sellers.find(s=>s.seller_user_id===id);
   if(!s) throw Error('Store not found.');
   const menu=await api.items(id); if(version!==routeVersion) return;
-  $('#app').innerHTML=`<div class="container store-page"><a href="#/" class="breadcrumb">← All stores</a><section class="store-banner">${image(id,s.username)}<div class="store-title"><span class="eyebrow">${esc(s.cuisine_type||s.store_category||s.kind)}</span><h1>${esc(s.username)}</h1><p>${s.rating===null?'No ratings yet':`★ ${Number(s.rating).toFixed(1)} · Customer rating`}</p><p>${s.active_status==='Inactive'?'Currently not accepting orders':'Order for yourself or share a group order with friends.'}</p></div></section><div class="store-toolbar"><span>Prices in HKD</span><div class="store-order-actions"><button class="primary" data-solo-create="${id}" ${s.active_status==='Inactive'||!menu.length?'disabled':''}>Order for myself</button><button class="outline" data-create="${id}" ${s.active_status==='Inactive'||!menu.length?'disabled':''}>Start a group order</button></div></div><h2>Menu</h2><p class="muted">Choose “Order for myself” or “Start a group order” to add food.</p><div class="menu-grid live-menu">${menuCards(menu)}</div></div>`;
+  $('#app').innerHTML=`<div class="container store-page"><a href="#/" class="breadcrumb">← All stores</a><section class="store-banner">${image(id,s.username)}<div class="store-title"><span class="eyebrow">${esc(s.cuisine_type||s.store_category||s.kind)}</span><h1>${esc(s.username)} ${heartButton('seller',id,s.username)}</h1><p>${s.rating===null?'No ratings yet':`★ ${Number(s.rating).toFixed(1)} · Customer rating`}</p><p>${s.active_status==='Inactive'?'Currently not accepting orders':'Order for yourself or share a group order with friends.'}</p></div></section><div class="store-toolbar"><span>Prices in HKD</span><div class="store-order-actions"><button class="primary" data-solo-create="${id}" ${s.active_status==='Inactive'||!menu.length?'disabled':''}>Order for myself</button><button class="outline" data-create="${id}" ${s.active_status==='Inactive'||!menu.length?'disabled':''}>Start a group order</button></div></div><h2>Menu</h2><p class="muted">Choose “Order for myself” or “Start a group order” to add food.</p><div class="menu-grid live-menu">${menuCards(menu)}</div></div>`;
 }
 async function groupList(scope,version) {
   if(!user) {$('#app').innerHTML='<section class="container empty"><h1>Your shared table awaits</h1><p>Log in to browse and join real group orders.</p><button class="primary" data-action="login">Log in</button></section>';return;}
@@ -72,8 +85,16 @@ function timingNote(o) {
   if(o.completion_due_at&&o.order_status==='Confirmed')return `<p class="order-timing">Estimated completion ${date(o.completion_due_at)} HKT</p>`;
   return '';
 }
+function couponControls(order, kind) {
+  if (order.coupon_applied) {
+    return `<div class="coupon-box"><p><span>Coupon ${esc(order.coupon_code)}</span><b>−${money(order.discount_cents)}</b></p>${order.can_apply_coupon?`<button class="text-button" data-action="${kind}-coupon-remove">Remove coupon</button>`:''}</div>`;
+  }
+  if (!order.can_apply_coupon) return '';
+  const usable = myCoupons.filter(c => c.usable);
+  return `<div class="coupon-box"><form class="coupon-form" data-coupon-kind="${kind}"><input name="code" maxlength="50" placeholder="Coupon code" aria-label="Coupon code" autocomplete="off"><button class="outline" type="submit">Apply</button></form>${usable.length?`<p class="muted">Your codes: ${usable.map(c=>esc(c.coupon_code)).join(', ')}</p>`:'<p class="muted">No unused coupons on this account.</p>'}</div>`;
+}
 function individualReceipt(o) {
-  return `<div class="basket solo-receipt"><h2>Your order</h2>${o.items.map(i=>`<div class="basket-item"><div><b>${esc(i.item_name)}</b><small>${money(i.unit_price_snapshot_cents)} each</small>${o.can_edit?`<button class="text-button" data-solo-remove="${i.item_id}">Remove</button>`:''}</div>${o.can_edit?`<div class="stepper"><button data-solo-qty="${i.item_id}" data-value="${i.quantity-1}" aria-label="Decrease ${esc(i.item_name)} quantity">−</button><span>${i.quantity}</span><button data-solo-qty="${i.item_id}" data-value="${i.quantity+1}" ${i.quantity>=99?'disabled':''} aria-label="Increase ${esc(i.item_name)} quantity">+</button></div>`:`<b>${i.quantity} × ${money(i.unit_price_snapshot_cents)}</b>`}</div>`).join('')||'<p class="muted">Your basket is empty. Add something delicious.</p>'}<div class="totals"><p><span>Food subtotal</span><b>${money(o.item_subtotal_cents)}</b></p><p><span>Delivery fee</span><b>${money(o.shipping_fee_cents)}</b></p><p class="total"><b>Total</b><b>${money(o.total_cents)}</b></p><small>Before coupons. No online payment is collected.</small></div>${o.can_edit?`<button class="primary full" data-action="solo-place" ${o.can_place?'':'disabled'}>Place order · ${money(o.total_cents)}</button><button class="text-button full spaced" data-action="solo-cancel">Cancel order</button>`:''}</div>`;
+  return `<div class="basket solo-receipt"><h2>Your order</h2>${o.items.map(i=>`<div class="basket-item"><div><b>${esc(i.item_name)}</b><small>${money(i.unit_price_snapshot_cents)} each</small>${o.can_edit?`<button class="text-button" data-solo-remove="${i.item_id}">Remove</button>`:''}</div>${o.can_edit?`<div class="stepper"><button data-solo-qty="${i.item_id}" data-value="${i.quantity-1}" aria-label="Decrease ${esc(i.item_name)} quantity">−</button><span>${i.quantity}</span><button data-solo-qty="${i.item_id}" data-value="${i.quantity+1}" ${i.quantity>=99?'disabled':''} aria-label="Increase ${esc(i.item_name)} quantity">+</button></div>`:`<b>${i.quantity} × ${money(i.unit_price_snapshot_cents)}</b>`}</div>`).join('')||'<p class="muted">Your basket is empty. Add something delicious.</p>'}${couponControls(o,'solo')}<div class="totals"><p><span>Food subtotal</span><b>${money(o.item_subtotal_cents)}</b></p><p><span>Delivery fee</span><b>${money(o.shipping_fee_cents)}</b></p>${o.coupon_applied?`<p><span>Coupon ${esc(o.coupon_code)}</span><b>−${money(o.discount_cents)}</b></p>`:''}<p class="total"><b>Total</b><b>${money(o.total_cents)}</b></p><small>${o.summary_basis==='after_coupons'?'After coupon. ':'Before coupons. '}No online payment is collected.</small></div>${o.can_edit?`<button class="primary full" data-action="solo-place" ${o.can_place?'':'disabled'}>Place order · ${money(o.total_cents)}</button><button class="text-button full spaced" data-action="solo-cancel">Cancel order</button>`:''}</div>`;
 }
 async function individualPage(id,version) {
   if(!user){$('#app').innerHTML='<section class="container empty"><h1>Your order</h1><p>Log in to view order details.</p><button class="primary" data-action="login">Log in</button></section>';return;}
@@ -91,14 +112,26 @@ function createIndividualModal(id) {
 function ownLines() {return group.items.filter(i=>i.user_id===user.user_id);}
 function summary() {
   const me=group.members.find(m=>m.buyer_user_id===user.user_id);
-  return `<div class="basket"><div class="basket-heading"><h2>Your order</h2></div><div class="basket-items">${ownLines().map(i=>`<div class="basket-item"><div><b>${esc(i.item_name)}</b><small>${money(i.unit_price_snapshot_cents)} each</small><button class="text-button" data-remove="${i.item_id}" ${group.can_edit?'':'disabled'}>Remove</button></div><div class="stepper"><button data-qty="${i.item_id}" data-value="${i.quantity-1}" ${group.can_edit?'':'disabled'} aria-label="Decrease ${esc(i.item_name)} quantity">−</button><span>${i.quantity}</span><button data-qty="${i.item_id}" data-value="${i.quantity+1}" ${group.can_edit&&i.quantity<99?'':'disabled'} aria-label="Increase ${esc(i.item_name)} quantity">+</button></div></div>`).join('')||'<p class="muted">No items yet. Choose from the menu.</p>'}</div><div class="totals"><p><span>Your food</span><b>${money(me.item_subtotal_cents)}</b></p><p><span>Your delivery share</span><b>${money(me.shipping_share_cents)}</b></p><p class="total"><b>Your total</b><b>${money(me.total_cents)}</b></p><small>Before coupons. No payment is collected.</small></div>${group.can_place?'<button class="primary full" data-action="place">Place group order</button>':group.order_status==='Pending'&&group.host_user_id===user.user_id&&!group.items.length?`<button class="primary full" disabled>Add food before placing</button><p class="basket-caption">Add at least one item to place the order.</p>`:''}<p class="basket-caption">Delivery remainder is allocated to the host.</p>${group.can_leave?'<button class="outline full spaced" data-action="leave">Leave group & remove my items</button>':''}${group.can_cancel?'<button class="text-button full" data-action="cancel">Cancel this group order</button>':''}</div>`;
+  return `<div class="basket"><div class="basket-heading"><h2>Your order</h2></div><div class="basket-items">${ownLines().map(i=>`<div class="basket-item"><div><b>${esc(i.item_name)}</b><small>${money(i.unit_price_snapshot_cents)} each</small><button class="text-button" data-remove="${i.item_id}" ${group.can_edit?'':'disabled'}>Remove</button></div><div class="stepper"><button data-qty="${i.item_id}" data-value="${i.quantity-1}" ${group.can_edit?'':'disabled'} aria-label="Decrease ${esc(i.item_name)} quantity">−</button><span>${i.quantity}</span><button data-qty="${i.item_id}" data-value="${i.quantity+1}" ${group.can_edit&&i.quantity<99?'':'disabled'} aria-label="Increase ${esc(i.item_name)} quantity">+</button></div></div>`).join('')||'<p class="muted">No items yet. Choose from the menu.</p>'}</div>${couponControls(group,'group')}<div class="totals"><p><span>Your food</span><b>${money(me.item_subtotal_cents)}</b></p><p><span>Your delivery share</span><b>${money(me.shipping_share_cents)}</b></p>${me.discount_cents?`<p><span>Host coupon ${esc(group.coupon_code||'')}</span><b>−${money(me.discount_cents)}</b></p>`:''}<p class="total"><b>Your total</b><b>${money(me.total_cents)}</b></p><small>${group.summary_basis==='after_coupons'?'Host coupon applied to the host’s share. ':'Before coupons. '}No payment is collected.</small></div>${group.can_place?'<button class="primary full" data-action="place">Place group order</button>':group.order_status==='Pending'&&group.host_user_id===user.user_id&&!group.items.length?`<button class="primary full" disabled>Add food before placing</button><p class="basket-caption">Add at least one item to place the order.</p>`:''}<p class="basket-caption">Delivery remainder is allocated to the host.</p>${group.can_leave?'<button class="outline full spaced" data-action="leave">Leave group & remove my items</button>':''}${group.can_cancel?'<button class="text-button full" data-action="cancel">Cancel this group order</button>':''}</div>`;
 }
 function renderGroup() {
   const g=group;
   if(!g.members){
     $('#app').innerHTML=`<section class="container groups-page"><a href="#/groups" class="breadcrumb">← Group orders</a><h1>${esc(g.seller_name)}</h1><p>Group #${g.order_id} · ${g.member_count} member${g.member_count===1?'':'s'} · ${esc(g.order_status)}</p><p>Closes ${date(g.deadline)} HKT · ${esc(g.group_status)}</p><p>Join to view everyone’s items and add your own food.</p><button class="primary" data-action="join" ${g.can_join?'':'disabled'}>${g.can_join?'Join this group':'This group is closed'}</button></section>`;return;
   }
-  $('#app').innerHTML=`<div class="container store-page"><a href="#/orders" class="breadcrumb">← Orders</a><section class="live-group-header"><div><span class="eyebrow">GROUP #${g.order_id}</span><h1>${esc(g.seller_name)}</h1><p>${g.member_count} member${g.member_count===1?'':'s'} · ${esc(g.fulfillment_type)} · Closes ${date(g.deadline)} HKT</p><span class="pill">${esc(g.order_status)}${g.order_status==='Pending'?' · '+esc(g.group_status):''}</span></div><div class="group-controls"><button class="outline" data-action="invite">Copy invite link ↗</button><button class="outline" data-action="refresh">Refresh</button></div></section><p class="state-banner">${g.order_status==='Cancelled'?'This group was cancelled.':g.order_status==='Completed'?'Your order is complete. Enjoy your meal!':g.order_status==='Confirmed'?'Order placed successfully. Your food order is confirmed.':g.can_edit?'Add food before the deadline. The host can place the order whenever everyone is ready.':g.order_status==='Pending'?'The group is closed. The host can now place the order.':'This order is read-only.'}</p>${timingNote(g)}<div class="menu-layout"><section><h2>Everyone at the table</h2><p class="muted">Amounts before coupons. Total delivery: ${money(g.shipping_fee_cents)}.</p><div class="member-cards">${g.members.map(m=>`<article class="member-card"><h3>${esc(m.username)} ${m.is_host?'<span class="pill">Host</span>':''}${m.buyer_user_id===user.user_id?' <small>(you)</small>':''}</h3><ul>${g.items.filter(i=>i.user_id===m.buyer_user_id).map(i=>`<li>${i.quantity} × ${esc(i.item_name)} <span>${money(i.line_total_cents)}</span></li>`).join('')||'<li>No items yet</li>'}</ul><p>Food ${money(m.item_subtotal_cents)} + delivery ${money(m.shipping_share_cents)} <b>${money(m.total_cents)}</b></p></article>`).join('')}</div><h2 class="menu-title">Add something delicious</h2><div class="menu-grid">${menuCards(groupMenu,true)}</div></section><aside id="inline-basket">${summary()}</aside></div><div class="mobile-summary">${summary()}</div></div>`;
+  $('#app').innerHTML=`<div class="container store-page"><a href="#/orders" class="breadcrumb">← Orders</a><section class="live-group-header"><div><span class="eyebrow">GROUP #${g.order_id}</span><h1>${esc(g.seller_name)}</h1><p>${g.member_count} member${g.member_count===1?'':'s'} · ${esc(g.fulfillment_type)} · Closes ${date(g.deadline)} HKT</p><span class="pill">${esc(g.order_status)}${g.order_status==='Pending'?' · '+esc(g.group_status):''}</span></div><div class="group-controls"><button class="outline" data-action="invite">Copy invite link ↗</button><button class="outline" data-action="refresh">Refresh</button></div></section><p class="state-banner">${g.order_status==='Cancelled'?'This group was cancelled.':g.order_status==='Completed'?'Your order is complete. Enjoy your meal!':g.order_status==='Confirmed'?'Order placed successfully. Your food order is confirmed.':g.can_edit?'Add food before the deadline. The host can place the order whenever everyone is ready.':g.order_status==='Pending'?'The group is closed. The host can now place the order.':'This order is read-only.'}</p>${timingNote(g)}<div class="menu-layout"><section><h2>Everyone at the table</h2><p class="muted">${g.coupon_applied?`Host coupon ${esc(g.coupon_code)} is applied to the host’s total. `:'Amounts before coupons. '}Total delivery: ${money(g.shipping_fee_cents)}.</p><div class="member-cards">${g.members.map(m=>`<article class="member-card"><h3>${esc(m.username)} ${m.is_host?'<span class="pill">Host</span>':''}${m.buyer_user_id===user.user_id?' <small>(you)</small>':''}</h3><ul>${g.items.filter(i=>i.user_id===m.buyer_user_id).map(i=>`<li>${i.quantity} × ${esc(i.item_name)} <span>${money(i.line_total_cents)}</span></li>`).join('')||'<li>No items yet</li>'}</ul><p>Food ${money(m.item_subtotal_cents)} + delivery ${money(m.shipping_share_cents)}${m.discount_cents?` − coupon ${money(m.discount_cents)}`:''} <b>${money(m.total_cents)}</b></p></article>`).join('')}</div><h2 class="menu-title">Add something delicious</h2><div class="menu-grid">${menuCards(groupMenu,true)}</div></section><aside id="inline-basket">${summary()}</aside></div><div class="mobile-summary">${summary()}</div></div>`;
+}
+async function favoritesPage(version) {
+  if(!user){$('#app').innerHTML='<section class="container empty"><h1>Your favourites</h1><p>Log in to save stores and dishes.</p><button class="primary" data-action="login">Log in</button></section>';return;}
+  await loadBuyerExtras(); if(version!==routeVersion)return;
+  const savedStores = favorites.sellers;
+  const savedDishes = favorites.items;
+  $('#app').innerHTML=`<section class="container groups-page"><span class="eyebrow">SAVED FOR LATER</span><h1>Favourites</h1><p>Stores and dishes saved to your account.</p><h2>Saved stores</h2><div class="store-grid">${savedStores.map(card).join('')||'<div class="empty"><h3>No saved stores yet</h3><p>Tap the heart on a restaurant to save it.</p></div>'}</div><h2 class="menu-title">Saved dishes</h2><div class="menu-grid">${savedDishes.map(i=>`<article class="menu-card"><div><h3>${esc(i.item_name)} ${heartButton('item',i.item_id,i.item_name)}</h3><p>${esc(i.seller_name)} · ${i.availability_status==='Available'?'Available':'Currently unavailable'}</p><strong>${money(i.price_cents)}</strong><p><a class="text-button" href="#/store/${i.seller_user_id}">View store →</a></p></div><div class="menu-image">${image(i.item_id,i.item_name)}</div></article>`).join('')||'<div class="empty"><h3>No saved dishes yet</h3><p>Tap the heart on a menu item to save it.</p></div>'}</div></section>`;
+}
+async function couponsPage(version) {
+  if(!user){$('#app').innerHTML='<section class="container empty"><h1>Your coupons</h1><p>Log in to see vouchers on this account.</p><button class="primary" data-action="login">Log in</button></section>';return;}
+  await loadBuyerExtras(); if(version!==routeVersion)return;
+  $('#app').innerHTML=`<section class="container groups-page"><span class="eyebrow">YOUR VOUCHERS</span><h1>Coupons</h1><p>Apply an unused code on a pending order. The host applies a group coupon, and the discount comes off the host’s share.</p><div class="coupon-list">${myCoupons.map(c=>`<article class="coupon-card ${c.usable?'':'used'}"><div><span class="pill">${c.usable?'Ready':c.used?'Used':'Expired'}</span><h3>${esc(c.coupon_code)}</h3><p>Save ${money(c.discount_cents)}${c.minimum_spend_cents?` · min spend ${money(c.minimum_spend_cents)}`:''}</p><small>Expires ${date(c.expiry_date)} HKT</small></div></article>`).join('')||'<div class="empty"><h3>No coupons yet</h3><p>Demo buyers Alice and Bob each have an unused voucher (ALICE10 / BOB5).</p></div>'}</div></section>`;
 }
 async function loadGroup(id,version) {
   if(!user){$('#app').innerHTML='<section class="container empty"><h1>Join your friends</h1><p>Log in to open this group invite.</p><button class="primary" data-action="login">Log in</button></section>';return;}
@@ -111,14 +144,16 @@ async function route() {
   const version=++routeVersion;
   closeModal();$('#app').innerHTML='<div class="container loading" role="status">Loading…</div>';
   try {
-    user=await api.session();sellers=await api.sellers();if(version!==routeVersion)return;
+    user=await api.session();sellers=await api.sellers();await loadBuyerExtras();if(version!==routeVersion)return;
     const hash=location.hash||'#/';const store=hash.match(/^#\/store\/(\d+)$/),match=hash.match(/^#\/group\/(\d+)$/);
     if(match){service='groups';await loadGroup(Number(match[1]),version);}
     else if(store) await storePage(Number(store[1]),version);
     else if(hash==='#/orders'||hash.startsWith('#/orders?')||hash==='#/mine'){service='orders';const type=new URLSearchParams(hash.split('?')[1]||'').get('type')||'all';await ordersPage(type,version);}
     else if(hash.match(/^#\/order\/\d+$/)){service='orders';await individualPage(Number(hash.split('/').at(-1)),version);}
     else if(hash==='#/groups'){service='groups';await groupList('joinable',version);}
-    else {if(service==='groups'||service==='orders')service='delivery';renderHome();}
+    else if(hash==='#/favorites'){service='favorites';await favoritesPage(version);}
+    else if(hash==='#/coupons'){service='coupons';await couponsPage(version);}
+    else {if(service==='groups'||service==='orders'||service==='favorites'||service==='coupons')service='delivery';renderHome();}
     if(version===routeVersion)sync();
   } catch(e) {
     if(version!==routeVersion)return;
@@ -142,7 +177,8 @@ document.addEventListener('click',e=>{
   if(e.target.closest('#overlay-root a[href]'))closeModal();
   const b=e.target.closest('button,[data-close]');if(!b)return;
   if(b.hasAttribute('data-close'))return closeModal();
-  if(b.dataset.service){service=b.dataset.service;category='All';search='';if(service==='orders'){if(location.hash==='#/orders')route();else location.hash='#/orders';}else if(service==='groups')location.hash='#/groups';else if(location.hash!=='#/')location.hash='#/';else route();return;}
+  if(b.closest('form') && !b.hasAttribute('data-action'))return;
+  if(b.dataset.service){service=b.dataset.service;category='All';search='';const dest={orders:'#/orders',groups:'#/groups',favorites:'#/favorites',coupons:'#/coupons'}[service];if(dest){if(location.hash===dest||(service==='orders'&&(location.hash.startsWith('#/orders')||location.hash==='#/mine')))route();else location.hash=dest;}else if(location.hash!=='#/')location.hash='#/';else route();return;}
   if(b.dataset.category){category=b.dataset.category;renderHome();return;}
   if(b.dataset.soloCreate)return createIndividualModal(Number(b.dataset.soloCreate));
   if(b.dataset.create)return createModal(Number(b.dataset.create));
@@ -153,10 +189,13 @@ document.addEventListener('click',e=>{
     if(b.dataset.add){const item=Number(b.dataset.add),line=ownLines().find(i=>i.item_id===item);await api.setItem(group.order_id,item,(line?.quantity||0)+1);await loadGroup(group.order_id,routeVersion);toast('Changes saved');return;}
     if(b.dataset.qty){const qty=Number(b.dataset.value);if(qty<=0)await api.removeItem(group.order_id,Number(b.dataset.qty));else await api.setItem(group.order_id,Number(b.dataset.qty),qty);await loadGroup(group.order_id,routeVersion);return;}
     if(b.dataset.remove){await api.removeItem(group.order_id,Number(b.dataset.remove));await loadGroup(group.order_id,routeVersion);toast('Item removed');return;}
+    if(b.dataset.favSeller){if(!user){loginModal();return;}const id=Number(b.dataset.favSeller);if(savedSeller(id))await api.unfavoriteSeller(id);else await api.favoriteSeller(id);await loadBuyerExtras();await route();return;}
+    if(b.dataset.favItem){if(!user){loginModal();return;}const id=Number(b.dataset.favItem);if(savedItem(id))await api.unfavoriteItem(id);else await api.favoriteItem(id);await loadBuyerExtras();await route();return;}
     switch(b.dataset.action){
       case 'login':loginModal();break;
       case 'solo-place':modal('Place your order?',`<p>Confirm your food and delivery total of ${money(individual.total_cents)}. No online payment is collected.</p><button class="primary full" data-action="solo-confirm-place">Confirm & place order</button>`);break;
       case 'solo-confirm-place':await api.placeIndividual(individual.order_id);await route();toast('Order placed successfully');break;
+      case 'solo-coupon-remove':await api.removeIndividualCoupon(individual.order_id);await loadBuyerExtras();await individualPage(individual.order_id,routeVersion);toast('Coupon removed');break;
       case 'solo-cancel':modal('Cancel your order?',`<p>Your order will remain in history as cancelled.</p><button class="primary full" data-action="solo-confirm-cancel">Cancel order</button>`);break;
       case 'solo-confirm-cancel':await api.cancelIndividual(individual.order_id);await route();break;
       case 'refresh':await route();break;
@@ -165,6 +204,7 @@ document.addEventListener('click',e=>{
       case 'confirm-leave':await api.leave(group.order_id);closeModal();location.hash='#/orders';break;
       case 'place':modal('Place this group order?',`<p>This submits everyone’s food and closes the group to all changes, even before the deadline. No online payment is collected.</p><button class="primary full" data-action="confirm-place">Confirm & place order</button>`);break;
       case 'confirm-place':await api.place(group.order_id);await route();toast('Order placed successfully');break;
+      case 'group-coupon-remove':await api.removeGroupCoupon(group.order_id);await loadBuyerExtras();await loadGroup(group.order_id,routeVersion);toast('Coupon removed');break;
       case 'cancel':modal('Cancel this group?',`<p>Everyone will lose the ability to change this order. The records will remain in the database.</p><button class="primary full" data-action="confirm-cancel">Cancel group order</button>`);break;
       case 'confirm-cancel':await api.cancel(group.order_id);await route();break;
       case 'invite':{const url=`${location.origin}/#/group/${group.order_id}`;try{await navigator.clipboard.writeText(url);toast('Invite link copied');}catch{modal('Invite your friends',`<p>Open this link in another browser and log in with another buyer.</p><input readonly value="${esc(url)}" aria-label="Group invite link">`);}break;}
@@ -188,6 +228,14 @@ document.addEventListener('submit',e=>{
       const g=await api.create({seller_user_id:Number(f.dataset.seller),deadline:instant.toISOString(),fulfillment_type:values.get('fulfillment')});
       closeModal();location.hash=`#/group/${g.order_id}`;
     }
+    if(f.dataset.couponKind==='solo'){
+      await api.applyIndividualCoupon(individual.order_id, String(values.get('code')||'').trim());
+      await loadBuyerExtras();await individualPage(individual.order_id,routeVersion);toast('Coupon applied');
+    }
+    if(f.dataset.couponKind==='group'){
+      await api.applyGroupCoupon(group.order_id, String(values.get('code')||'').trim());
+      await loadBuyerExtras();await loadGroup(group.order_id,routeVersion);toast('Coupon applied');
+    }
   },f.querySelector('button[type="submit"],button'));
 });
 document.addEventListener('change',e=>{if(e.target.id==='sort'){sort=e.target.value;$('#results').innerHTML=results();}if(e.target.id==='rating'){topRated=e.target.checked;$('#results').innerHTML=results();}});
@@ -198,7 +246,7 @@ document.addEventListener('keydown',e=>{
     if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   }
 });
-$('#auth').onclick=()=>user?modal('Your account',`<p>Signed in as ${esc(user.username)}.</p><a class="primary full account-link" href="#/orders">Orders</a><button class="outline full spaced" data-action="logout">Log out</button>`):loginModal();
+$('#auth').onclick=()=>user?modal('Your account',`<p>Signed in as ${esc(user.username)}.</p><a class="primary full account-link" href="#/orders">Orders</a><a class="outline full spaced account-link" href="#/favorites">Favourites</a><a class="outline full account-link" href="#/coupons">Coupons</a><button class="outline full spaced" data-action="logout">Log out</button>`):loginModal();
 $('#cart-button').onclick=()=>{location.hash=activeOrderType==='individual'&&individual?.order_status==='Pending'?`#/order/${individual.order_id}`:group?.members?`#/group/${group.order_id}`:'#/orders';};
 $('#language').onclick=()=>toast('The website is in English. Documentation is available in English and Chinese.');
 $('#location').onclick=()=>toast('Hong Kong demo. Delivery address selection is outside phase one.');

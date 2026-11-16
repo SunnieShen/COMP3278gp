@@ -2,7 +2,7 @@
 
 **English** | [简体中文](API.zh-CN.md)
 
-Implemented contract: buyer login, catalog browsing, individual/group orders, membership, item CRUD, summaries, placement, cancellation and simulated completion. The ER03 entities are retained; orders adds three operational timestamps for completion.
+Implemented contract: buyer login, catalog browsing, individual/group orders, membership, item CRUD, summaries, placement, cancellation, simulated completion, favourites and coupons. The ER03 entities are retained; orders adds three operational timestamps for completion.
 
 ## 1. Common rules
 
@@ -24,9 +24,9 @@ Error example (never return raw SQL or password hashes):
 |---|---|
 | 400 | `VALIDATION_ERROR` |
 | 401 | `INVALID_CREDENTIALS`, `AUTH_REQUIRED` |
-| 403 | `BUYER_REQUIRED`, `NOT_A_MEMBER`, `HOST_ONLY`, `HOST_CANNOT_LEAVE`, `CSRF_INVALID` |
-| 404 | `NOT_FOUND` |
-| 409 | `GROUP_LOCKED`, `ORDER_NOT_EDITABLE`, `ITEM_UNAVAILABLE`, `WRONG_SELLER`, `SELLER_INACTIVE`, `QUANTITY_LIMIT`, `CONCURRENT_UPDATE`, `EMPTY_ORDER`, `INVALID_ORDER` |
+| 403 | `BUYER_REQUIRED`, `NOT_A_MEMBER`, `HOST_ONLY`, `HOST_CANNOT_LEAVE`, `CSRF_INVALID`, `COUPON_NOT_OWNED` |
+| 404 | `NOT_FOUND`, `COUPON_NOT_FOUND` |
+| 409 | `GROUP_LOCKED`, `ORDER_NOT_EDITABLE`, `ITEM_UNAVAILABLE`, `WRONG_SELLER`, `SELLER_INACTIVE`, `QUANTITY_LIMIT`, `CONCURRENT_UPDATE`, `EMPTY_ORDER`, `INVALID_ORDER`, `COUPON_EXPIRED`, `COUPON_USED`, `COUPON_MIN_SPEND` |
 | 503 | `DELIVERY_NOT_CONFIGURED` |
 | 500 | `INTERNAL_ERROR` (generic message) |
 
@@ -59,7 +59,7 @@ Catalog photos/descriptions, review counts, promotions and minimum spend are not
 - New groups use `order_status = 'Pending'`. In phase one, only Pending groups before the deadline are editable. Cancellation sets `Cancelled`; it preserves records for history and disables further edits, including joining/leaving.
 - Preserve existing seed statuses (`Pending`, `Confirmed`, `In Progress`, `Completed`, `Cancelled`) without rewriting them. A historical order may have group_status=open but lifecycle=Completed; that does **not** make it editable.
 - Detail responses expose `can_edit`, `can_join`, `can_leave`, `can_cancel`, `can_place` for the current caller. Recheck all permissions and time inside every write transaction, locking the parent order row to serialize competing membership/item/cancellation changes.
-- This phase includes deadline locking, cost summaries and host submission to Confirmed. Payment workflows, coupons, shipping addresses, merchant/courier screens and favourites are outside this contract. Existing mock-only controls must be hidden or explicitly marked until implemented.
+- This phase includes deadline locking, cost summaries, host submission to Confirmed, favourites and coupon application. Payment workflows, shipping addresses and merchant/courier screens remain outside this contract.
 
 ## 4. Endpoints
 
@@ -82,6 +82,16 @@ Public: session, seller list/detail and menu. All group endpoints require a buye
 | DELETE | `/group-orders/{order_id}/items/{item_id}` | Delete caller's own line; idempotent if already absent; 204 |
 | POST | `/group-orders/{order_id}/place` | Empty JSON body; host only, Pending with at least one item, before or after the deadline; set Confirmed; repeated Confirmed submissions return the same detail; 200 |
 | POST | `/group-orders/{order_id}/cancel` | Empty JSON body; host only, Pending and before deadline; already-Cancelled is idempotent; 200 complete detail |
+| GET | `/favorites` | `{data:{sellers:[seller objects],items:[item objects with seller_name]}}`; newest saved first |
+| PUT | `/favorites/sellers/{seller_user_id}` | Empty JSON; save store; idempotent; 200 `{saved:true}` |
+| DELETE | `/favorites/sellers/{seller_user_id}` | Unsave store; idempotent; 204 |
+| PUT | `/favorites/items/{item_id}` | Empty JSON; save dish; idempotent; 200 `{saved:true}` |
+| DELETE | `/favorites/items/{item_id}` | Unsave dish; idempotent; 204 |
+| GET | `/coupons` | Current buyer’s coupons with `discount_cents`, `minimum_spend_cents`, `expiry_date`, `used`, `expired`, `usable` |
+| PUT | `/orders/{order_id}/coupon` | Body `{coupon_code}`; owner, Pending individual; 200 receipt |
+| DELETE | `/orders/{order_id}/coupon` | Remove coupon; 200 receipt |
+| PUT | `/group-orders/{order_id}/coupon` | Body `{coupon_code}`; host only, Pending and before deadline; discount off food subtotal, subtracted from the host member total; 200 detail |
+| DELETE | `/group-orders/{order_id}/coupon` | Host only; 200 detail |
 
 Unknown order IDs return 404. For known groups, writes require membership (except joining); closed/non-Pending membership and item mutations fail, even when the desired row already exists/does not exist. Cancelling an already-Cancelled order is the one lifecycle exception. No body may choose the caller's identity, price, host, coupon, courier or shipping fee.
 
@@ -107,7 +117,7 @@ host shipping share = base + remainder
 member total = sum(quantity × snapshot cents) + shipping share
 ```
 
-The backend calculates and returns totals for all members. Recalculate after joining/leaving; costs are provisional while open. Sum of member shares must equal the stored delivery fee. Coupons are not applied in this phase; seeded coupon orders expose `coupon_id` and `coupon_applied: false`, with the summary explicitly labelled **before coupons** rather than a final payable bill.
+The backend calculates and returns totals for all members. Recalculate after joining/leaving; costs are provisional while open. Sum of member shares must equal the stored delivery fee. An attached coupon sets `coupon_applied: true` and `summary_basis: after_coupons`. Discount is `min(coupon cents, food subtotal)` and, for groups, is taken only from the host’s member total (capped so that total cannot go negative). Other members are unchanged. Placement re-checks ownership, expiry, uniqueness and minimum spend against the current food subtotal; cancelling a Pending order releases the coupon. Unused demo codes: Alice `ALICE10` (min HK$30), Bob `BOB5`. Seeded `94002` uses `WELCOME10`.
 
 | Seed order | Members | Shipping cents | Nonhost share | Host share |
 |---|---:|---:|---:|---:|
@@ -136,8 +146,10 @@ The zero-fee seed is a solo order, not a group. To exercise this through the pha
     "group_status": "open",
     "fulfillment_type": "Delivery",
     "coupon_id": null,
+    "coupon_code": null,
     "currency": "HKD",
     "coupon_applied": false,
+    "discount_cents": 0,
     "summary_basis": "before_coupons",
     "shipping_fee_cents": 1000,
     "can_edit": true,
@@ -145,10 +157,11 @@ The zero-fee seed is a solo order, not a group. To exercise this through the pha
     "can_leave": false,
     "can_cancel": true,
     "can_place": true,
+    "can_apply_coupon": true,
     "members": [
-      {"buyer_user_id":90002,"username":"Bob Chan","is_host":true,"item_subtotal_cents":6800,"shipping_share_cents":334,"total_cents":7134},
-      {"buyer_user_id":90003,"username":"Carol Lee","is_host":false,"item_subtotal_cents":2200,"shipping_share_cents":333,"total_cents":2533},
-      {"buyer_user_id":90004,"username":"David Lam","is_host":false,"item_subtotal_cents":6800,"shipping_share_cents":333,"total_cents":7133}
+      {"buyer_user_id":90002,"username":"Bob Chan","is_host":true,"item_subtotal_cents":6800,"shipping_share_cents":334,"discount_cents":0,"total_cents":7134},
+      {"buyer_user_id":90003,"username":"Carol Lee","is_host":false,"item_subtotal_cents":2200,"shipping_share_cents":333,"discount_cents":0,"total_cents":2533},
+      {"buyer_user_id":90004,"username":"David Lam","is_host":false,"item_subtotal_cents":6800,"shipping_share_cents":333,"discount_cents":0,"total_cents":7133}
     ],
     "items": [
       {"order_id":94102,"user_id":90002,"item_id":92001,"item_name":"Soy Sauce Chicken Rice","quantity":1,"unit_price_snapshot_cents":6800,"line_total_cents":6800},
@@ -171,7 +184,7 @@ Use actual API-generated order IDs, integer cents and server timestamps. See the
 
 ## Unified order history
 
-GET /orders?type=all|group|individual (default all) requires a buyer session. It returns {data:{server_time,orders:[...]}} using current membership for groups and host ownership for individuals; entries include order_type, created_at, status, seller, fulfillment type and group metadata (null deadline/group_status for individuals). GET /orders/{id} returns a group member's detail with order_type=group, or the owning buyer's individual receipt with order_type=individual, items, item_subtotal_cents, shipping_fee_cents, total_cents, coupon_applied=false, summary_basis=before_coupons and lifecycle permissions (Pending orders are editable). Other buyers cannot access individual receipts (404); group nonmembers receive 403 here and should use the group invitation endpoint instead. Individual creation and mutations are specified below.
+GET /orders?type=all|group|individual (default all) requires a buyer session. It returns {data:{server_time,orders:[...]}} using current membership for groups and host ownership for individuals; entries include order_type, created_at, status, seller, fulfillment type and group metadata (null deadline/group_status for individuals). GET /orders/{id} returns a group member's detail with order_type=group, or the owning buyer's individual receipt with order_type=individual, items, item_subtotal_cents, shipping_fee_cents, total_cents, coupon fields and lifecycle permissions (Pending orders are editable). An attached coupon reduces `total_cents`. Other buyers cannot access individual receipts (404); group nonmembers receive 403 here and should use the group invitation endpoint instead. Individual creation and mutations are specified below.
 
 ## Individual-order actions
 

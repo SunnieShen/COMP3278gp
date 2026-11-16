@@ -37,7 +37,7 @@ python -m backend.manage init
 python app.py
 ```
 
-Open http://127.0.0.1:5000. `init` creates the schema, imports the existing 160 seed records, and assigns usable password hashes to the two demo buyers. It refuses a database containing tables; it never resets an existing application database. Login credentials, for local course demos only:
+Open http://127.0.0.1:5000. `init` creates the schema, imports the existing 162 seed records, and assigns usable password hashes to the two demo buyers. It refuses a database containing tables; it never resets an existing application database. Login credentials, for local course demos only:
 
 | Buyer | Email | Password |
 |---|---|---|
@@ -48,9 +48,9 @@ For an existing ER03 database, first run `python -m backend.manage migrate` to r
 
 Create a group from a seller's menu. Open its copied invite link in another browser profile/private window, log in as the other buyer, join, and add/change/remove your own items. Two ordinary tabs share a session. Group details refresh every 15 seconds and have a manual Refresh button.
 
-Delivery groups use the server's `DELIVERY_FEE_CENTS` (default 1000); configure `DEMO_COURIER_USER_ID` to an Available seeded courier (90201 by default). A delivery record is created atomically with the group. This is demo assignment, not real dispatch. Zero is a valid fee; pickup has no delivery record. Existing orders use their saved delivery fees. Remainder cents go to the host. All summaries are **before coupons**, not final payment demands.
+Delivery groups use the server's `DELIVERY_FEE_CENTS` (default 1000); configure `DEMO_COURIER_USER_ID` to an Available seeded courier (90201 by default). A delivery record is created atomically with the group. This is demo assignment, not real dispatch. Zero is a valid fee; pickup has no delivery record. Existing orders use their saved delivery fees. Remainder cents go to the host. An attached coupon discounts the food subtotal; on a group order it comes off the host’s share only. This is still not a payment demand.
 
-The real UI reads the 4 seeded sellers and their 9 items. Images are local presentation assets, not database columns. Online payment, favourites, addresses, coupons, merchant/courier screens are not implemented in this phase. There is no early-lock action: Pending groups become read-only at the deadline, using Hong Kong time. Cancellation preserves records.
+The real UI reads the 4 seeded sellers and their 9 items. Images are local presentation assets, not database columns. Favourites and coupons are implemented; online payment, addresses and merchant/courier screens are not. There is no early-lock action: Pending groups become read-only at the deadline, using Hong Kong time. Cancellation preserves records and releases any attached coupon. Alice’s unused demo code is `ALICE10` (min HK$30); Bob’s is `BOB5`.
 
 [Frontend details](frontend/README.md) · [API contract](docs/API.md) · [中文接口约定](docs/API.zh-CN.md)
 
@@ -74,7 +74,7 @@ This README follows the [ER03 diagram](ER/ER03.png), its [editable source](ER/ER
 
 - The ER diagram, business descriptions, `db/schema.sql` and reproducible import script `db/setup.sh` are available.
 - The database design contains **18 tables and 2 views**. Phase-one integration uses a subset; a table being present does not mean its entire feature is implemented.
-- The frontend uses Flask/MySQL for login, catalog browsing, individual/group ordering, membership, item CRUD, submission/cancellation, history and simulated completion.
+- The frontend uses Flask/MySQL for login, catalog browsing, individual/group ordering, membership, item CRUD, favourites, coupon application, submission/cancellation, history and simulated completion.
 - `ER_Diagram_Details*.md` contains several design revisions. Resolve discrepancies against ER03 and the schema script.
 
 ## Database Design
@@ -114,7 +114,7 @@ PK = primary key; FK = foreign key; UK = unique key.
 - **Deliveries:** Each delivery references one order and one courier; an order has at most one delivery. Delivery orders require a delivery record, while self-pickup orders have none. The creation endpoint enforces this condition for new groups.
 - **Ratings:** `seller_rating_view` calculates the average score rather than storing it on the seller. Scores range from 1 to 5.
 - **Deletion:** Current foreign keys do not cascade deletes. Define transactional deletion of dependent records, or agree on changes to the foreign-key rules.
-- **Deferred features:** Addresses are not directly linked to orders; address selection and coupon allocation are excluded from phase one. Summaries for seeded coupon orders are labelled before coupons.
+- **Deferred features:** Addresses are not directly linked to orders; address selection, merchant tools and online payment remain outside phase one. Coupons are applied by code on a pending order; they are not allocated from a merchant admin screen.
 
 ### Design decisions and fixture evidence
 
@@ -129,7 +129,7 @@ The revisions came from three annotated review rounds kept outside this reposito
 | ORDER_ITEM is an ID-dependent weak entity with a three-part key | ER01 回应 green double outlines on ADDS / CONTAINS / SELECTS | 94002 and 94005: item 92001 added by two different buyers | `order_items` PK |
 | `group_status` derived from deadline; `completed` belongs to `order_status` | ER01 回应 "group_status 作为 derived attribute from deadline" | 2099 / 2000 deadlines; 94009 is `locked` but still `Pending` | `group_order_status_view` |
 | `shipping_fee` on DELIVERY; HAS_DELIVERY is 1:1 and partial | ER01 回应 green "shipping_fee?" circle near DELIVERY | 10 Delivery orders have exactly one delivery; 3 Self-Pickup orders have none; one delivery has a `$0.00` fee | `deliveries.order_id UNIQUE` |
-| Coupon is a per-buyer, single-use voucher (1:1 APPLIES) | ER01 回应 "really?" on coupon reuse; ER03 想法 §5 Option B | 4 coupons used once each, 93004 expired and unused, 5 orders with NULL coupon | `orders.coupon_id UNIQUE`, `coupons.buyer_user_id` |
+| Coupon is a per-buyer, single-use voucher (1:1 APPLIES) | ER01 回应 "really?" on coupon reuse; ER03 想法 §5 Option B | 4 coupons used once each, 93004 expired unused, 93006/93007 unused demo vouchers, 5 orders with NULL coupon | `orders.coupon_id UNIQUE`, `coupons.buyer_user_id` |
 | ORDERS supertype over solo / group orders | ER02 问题 "shared features" + hand-drawn ISA sketch; ER03 想法 §4 | 13 orders = 4 solo + 9 group sharing host, seller and status | `orders` + two subtype tables |
 | Group cost allocation handles participant-count boundaries | ER03 special-case sample data recommendation §2 | 94101 / 94102 / 94103 have 1 / 3 / 4 participants and delivery fees of `$10.00` / `$10.00` / `$10.02` | `group_order_participants`, `deliveries.shipping_fee` |
 | Price snapshot must survive catalogue changes | ER02 问题 `unit price snapshot` | 94001 / 92003 stores 16.50 while the current price is 18.50 | `order_items.unit_price_snapshot` |
@@ -145,8 +145,10 @@ The revisions came from three annotated review rounds kept outside this reposito
 | Add food / change quantity / remove food | Create / Read / Update / Delete | order_items |
 | Member subtotals, delivery shares and order history | Read | orders, order_items, group_order_participants, deliveries |
 | Place / cancel a draft; simulated completion | Update | orders, deliveries |
+| Save / unsave stores and dishes | Create / Read / Delete | favorite_sellers, favorite_items |
+| List coupons; apply / remove on a pending order | Read / Update | coupons, orders |
 
-Cancellation retains history; removing items and leaving groups perform actual DELETE operations. Item totals use `SUM(quantity * unit_price_snapshot)`. Shipping is split in integer cents with remainder assigned to the host; pickup has no delivery fee. Registration, favourites, address/coupon management, merchant tools and online payment are outside the implemented scope.
+Cancellation retains history; removing items and leaving groups perform actual DELETE operations. Item totals use `SUM(quantity * unit_price_snapshot)`. Shipping is split in integer cents with remainder assigned to the host; pickup has no delivery fee. A coupon is 1:1 with an order; the host applies a group voucher and the discount is subtracted from the host share. Registration, address selection, merchant tools and online payment are outside the implemented scope.
 
 ### Representative SQL
 
@@ -202,7 +204,7 @@ After creating the schema, import the test fixtures with:
 bash db/seed.sh
 ```
 
-The script imports 160 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. Additional group-order fixtures `94101`–`94103` cover 1, 3 and 4 participants and delivery-fee remainder allocation; solo order `94104` covers a zero-fee delivery. Other boundary cases include a buyer with two addresses and one with none, a seller with no items and no ratings, a courier with no deliveries, both directions of the favourites M:N relationships, and a historical price snapshot. See [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence) for the decision each case supports; the fixture set is a coverage checklist, not a volume exercise. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
+The script imports 162 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used, unused and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. Additional group-order fixtures `94101`–`94103` cover 1, 3 and 4 participants and delivery-fee remainder allocation; solo order `94104` covers a zero-fee delivery. Other boundary cases include a buyer with two addresses and one with none, a seller with no items and no ratings, a courier with no deliveries, both directions of the favourites M:N relationships, and a historical price snapshot. See [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence) for the decision each case supports; the fixture set is a coverage checklist, not a volume exercise. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
 
 ### Inspect the database with the MySQL CLI
 

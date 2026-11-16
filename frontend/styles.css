@@ -29,3 +29,16 @@
 .order-timing{font-size:13px;color:var(--pink);margin:-12px 0 25px}
 
 .order-refresh{margin-top:12px;font-size:12px}
+
+.store-title .heart,.menu-card .heart{position:static;display:inline-grid;margin-left:8px;vertical-align:middle;width:28px;height:28px;font-size:16px;border:1px solid var(--line);box-shadow:none}
+.coupon-box{border:1px dashed #f3b3ce;background:var(--soft);border-radius:10px;padding:12px;margin:12px 0}
+.coupon-box p{display:flex;justify-content:space-between;margin:0;font-size:12px}
+.coupon-form{display:flex;gap:8px;align-items:center}
+.coupon-form input{flex:1;min-width:0;padding:10px 12px;border:1px solid #ddd3d9;border-radius:8px;background:#fff}
+.coupon-form .outline{padding:8px 12px;min-height:40px;font-size:12px}
+.coupon-list{display:grid;gap:12px;margin-top:24px}
+.coupon-card{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:20px;background:#fff}
+.coupon-card.used{opacity:.6}
+.coupon-card h3{margin:8px 0 6px;letter-spacing:.4px}
+.coupon-card p,.coupon-card small{color:var(--muted);font-size:12px}
+.menu-card h3{display:flex;align-items:center;justify-content:space-between;gap:8px}

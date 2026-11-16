@@ -44,5 +44,15 @@ export const api = {
   setItem: (id,item,quantity) => request(`/group-orders/${id}/items/${item}`, {method:'PUT',data:{quantity}}),
   removeItem: (id,item) => request(`/group-orders/${id}/items/${item}`, {method:'DELETE'}),
   cancel: id => request(`/group-orders/${id}/cancel`, {method:'POST',data:{}}),
-  place: id => request(`/group-orders/${id}/place`, {method:'POST',data:{}})
+  place: id => request(`/group-orders/${id}/place`, {method:'POST',data:{}}),
+  favorites: () => request('/favorites'),
+  favoriteSeller: id => request(`/favorites/sellers/${id}`, {method:'PUT',data:{}}),
+  unfavoriteSeller: id => request(`/favorites/sellers/${id}`, {method:'DELETE'}),
+  favoriteItem: id => request(`/favorites/items/${id}`, {method:'PUT',data:{}}),
+  unfavoriteItem: id => request(`/favorites/items/${id}`, {method:'DELETE'}),
+  coupons: () => request('/coupons'),
+  applyIndividualCoupon: (id, coupon_code) => request(`/orders/${id}/coupon`, {method:'PUT',data:{coupon_code}}),
+  removeIndividualCoupon: id => request(`/orders/${id}/coupon`, {method:'DELETE'}),
+  applyGroupCoupon: (id, coupon_code) => request(`/group-orders/${id}/coupon`, {method:'PUT',data:{coupon_code}}),
+  removeGroupCoupon: id => request(`/group-orders/${id}/coupon`, {method:'DELETE'})
 };

@@ -39,6 +39,25 @@ def migrate_created_at(connection):
     connection.commit()
 
 
+def ensure_demo_coupons(connection):
+    """Unused demo coupons so Alice/Bob can apply a voucher on a new order."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            '''INSERT INTO coupons
+               (coupon_id, buyer_user_id, coupon_code, discount_value, minimum_spend_threshold, expiry_date)
+               VALUES
+               (93006, 90001, 'ALICE10', 10.00, 30.00, '2099-12-31 23:59:59'),
+               (93007, 90002, 'BOB5', 5.00, 0.00, '2099-12-31 23:59:59')
+               ON DUPLICATE KEY UPDATE
+                 buyer_user_id = VALUES(buyer_user_id),
+                 coupon_code = VALUES(coupon_code),
+                 discount_value = VALUES(discount_value),
+                 minimum_spend_threshold = VALUES(minimum_spend_threshold),
+                 expiry_date = VALUES(expiry_date)'''
+        )
+    connection.commit()
+
+
 def migrate_completion(connection):
     # MySQL 8 does not offer portable ADD COLUMN IF NOT EXISTS.
     with connection.cursor() as cursor:
@@ -77,6 +96,7 @@ def main():
         if args.command == 'migrate':
             migrate_created_at(connection)
             migrate_completion(connection)
+            ensure_demo_coupons(connection)
         if args.command == 'init':
             import_sql(connection, 'db/schema.sql')
         if args.command in ('init', 'seed'):
@@ -87,7 +107,7 @@ def main():
             prepare_demo_accounts(connection)
         print(f'{args.command} completed for {name}.')
         if args.command == 'migrate':
-            print('created_at and completion schedule columns are ready. Existing data/passwords preserved.')
+            print('created_at, completion columns and unused demo coupons (ALICE10/BOB5) are ready. Existing data/passwords preserved.')
         elif args.command == 'refresh-labels':
             print('Reserved display labels refreshed; existing passwords and orders preserved.')
         else:

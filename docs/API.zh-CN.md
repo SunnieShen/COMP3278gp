@@ -2,7 +2,7 @@
 
 [English](API.md) | **简体中文**
 
-当前已实现买家登录、商家浏览、个人单与拼单、成员及菜品 CRUD、金额汇总、提交取消和模拟完成。保留 ER03 实体，orders 另加三个完成时间字段。本文是前后端共享的行为约定。
+当前已实现买家登录、商家浏览、个人单与拼单、成员及菜品 CRUD、金额汇总、提交取消、模拟完成、收藏和优惠券。保留 ER03 实体，orders 另加三个完成时间字段。本文是前后端共享的行为约定。
 
 ## 1. 通用规则
 
@@ -24,9 +24,9 @@
 |---|---|
 | 400 | `VALIDATION_ERROR` |
 | 401 | `INVALID_CREDENTIALS`、`AUTH_REQUIRED` |
-| 403 | `BUYER_REQUIRED`、`NOT_A_MEMBER`、`HOST_ONLY`、`HOST_CANNOT_LEAVE`、`CSRF_INVALID` |
-| 404 | `NOT_FOUND` |
-| 409 | `GROUP_LOCKED`、`ORDER_NOT_EDITABLE`、`ITEM_UNAVAILABLE`、`WRONG_SELLER`、`SELLER_INACTIVE`、`QUANTITY_LIMIT`、`CONCURRENT_UPDATE`、`EMPTY_ORDER`、`INVALID_ORDER` |
+| 403 | `BUYER_REQUIRED`、`NOT_A_MEMBER`、`HOST_ONLY`、`HOST_CANNOT_LEAVE`、`CSRF_INVALID`、`COUPON_NOT_OWNED` |
+| 404 | `NOT_FOUND`、`COUPON_NOT_FOUND` |
+| 409 | `GROUP_LOCKED`、`ORDER_NOT_EDITABLE`、`ITEM_UNAVAILABLE`、`WRONG_SELLER`、`SELLER_INACTIVE`、`QUANTITY_LIMIT`、`CONCURRENT_UPDATE`、`EMPTY_ORDER`、`INVALID_ORDER`、`COUPON_EXPIRED`、`COUPON_USED`、`COUPON_MIN_SPEND` |
 | 503 | `DELIVERY_NOT_CONFIGURED` |
 | 500 | `INTERNAL_ERROR`，只给通用提示 |
 
@@ -59,7 +59,7 @@
 - 新订单使用 `Pending`。第一阶段只有 Pending 且尚未截止的拼单能改；取消写入 `Cancelled`，保留历史记录，并禁止继续加入、退出或改菜。
 - 保留 seed 已有的 `Pending`、`Confirmed`、`In Progress`、`Completed`、`Cancelled`。历史订单即使截止时间派生为 open，如果业务状态已完成，也不能修改。
 - 详情返回针对当前用户的 `can_edit`、`can_join`、`can_leave`、`can_cancel`、`can_place`。每次写入在事务内重新检查身份、状态、服务器时间，并锁定父订单行，避免加入、加菜和取消相互竞争。
-- 当前支持个人单与拼单、金额查询、提交到 Confirmed 及模拟完成；支付、优惠券、送餐地址、商家／骑手页面和收藏尚未实现。
+- 当前支持个人单与拼单、金额查询、提交到 Confirmed、模拟完成、收藏和优惠券；支付、送餐地址、商家／骑手页面尚未实现。
 
 ## 4. 接口清单
 
@@ -82,6 +82,16 @@ session、商家和菜单查询公开；所有拼单接口要求买家登录。�
 | DELETE | `/group-orders/{order_id}/items/{item_id}` | 删除当前用户明细，已不存在也成功；204 |
 | POST | `/group-orders/{order_id}/place` | 空 JSON；host 可在截止前或截止后提交非空 Pending 拼单，状态更新为 Confirmed；重复提交 Confirmed 不重复建单；200 详情 |
 | POST | `/group-orders/{order_id}/cancel` | 空 JSON 请求体；仅 host，Pending 且截止前可取消；已取消则重复调用也成功；200 完整详情 |
+| GET | `/favorites` | `{data:{sellers:[商家对象],items:[含 seller_name 的商品对象]}}`，按最近收藏排序 |
+| PUT | `/favorites/sellers/{seller_user_id}` | 空 JSON；收藏商家，可重复调用；200 `{saved:true}` |
+| DELETE | `/favorites/sellers/{seller_user_id}` | 取消收藏商家，可重复调用；204 |
+| PUT | `/favorites/items/{item_id}` | 空 JSON；收藏菜品，可重复调用；200 `{saved:true}` |
+| DELETE | `/favorites/items/{item_id}` | 取消收藏菜品，可重复调用；204 |
+| GET | `/coupons` | 当前买家的优惠券，含 `discount_cents`、`minimum_spend_cents`、`expiry_date`、`used`、`expired`、`usable` |
+| PUT | `/orders/{order_id}/coupon` | `{coupon_code}`；个人单拥有者、Pending；200 收据 |
+| DELETE | `/orders/{order_id}/coupon` | 移除优惠券；200 收据 |
+| PUT | `/group-orders/{order_id}/coupon` | `{coupon_code}`；仅 host，Pending 且截止前；折扣按餐费计算，只从 host 应付中扣除；200 详情 |
+| DELETE | `/group-orders/{order_id}/coupon` | 仅 host；200 详情 |
 
 不存在的订单返回 404。除了加入操作外，写入要求当前用户是成员。对已截止或非 Pending 的拼单，即使目标行已存在或已删除，也拒绝成员／菜品修改；重复取消已取消订单是例外。请求不能指定操作人、host、价格、优惠券、骑手或运费。
 
@@ -107,7 +117,7 @@ host 运费 = 基础运费 + 余数
 每人总额 = 自己的商品金额 + 自己的运费
 ```
 
-后端计算所有人的金额，加入退出后重新计算；未截止时金额为暂估。所有人运费之和必须等于原运费。第一阶段不应用优惠券；已有带券订单返回 `coupon_id`、`coupon_applied: false`，明确显示“优惠券前金额”，不能当作最终应付款。
+后端计算所有人的金额，加入退出后重新计算；未截止时金额为暂估。所有人运费之和必须等于原运费。已用券的订单返回 `coupon_applied: true`、`summary_basis: after_coupons`。折扣为 `min(券面额分, 餐费小计)`，拼单只从 host 的应付中扣除（不低于 0）。提交时重新校验归属、有效期、是否已用和满减门槛；取消 Pending 订单会释放优惠券。演示未用券：Alice `ALICE10`（满 HK$30），Bob `BOB5`。seed `94002` 使用 `WELCOME10`。
 
 | Seed 订单 | 人数 | 运费（分） | 普通成员 | host |
 |---|---:|---:|---:|---:|
@@ -128,7 +138,7 @@ host 90002 查询 `GET /group-orders/94102` 的完整 JSON 示例见 [英文版�
 | 90003 Carol | 2200 | 333 | 2533 |
 | 90004 David | 6800 | 333 | 7133 |
 
-详情包括 order_id、host_user_id、seller_user_id、seller_name、created_at、deadline、server_time、order_status、group_status、fulfillment_type、coupon_id、currency、coupon_applied、summary_basis、shipping_fee_cents、五个权限字段、members 和 items。currency 为 HKD，summary_basis 为 before_coupons。
+详情包括 order_id、host_user_id、seller_user_id、seller_name、created_at、deadline、server_time、order_status、group_status、fulfillment_type、coupon_id、coupon_code、currency、coupon_applied、discount_cents、summary_basis、shipping_fee_cents、权限字段（含 can_apply_coupon）、members 和 items。currency 为 HKD；无券时 summary_basis 为 before_coupons。
 
 members 按 buyer_user_id 排序，含 username、is_host、item_subtotal_cents、shipping_share_cents、total_cents；items 按 user_id、item_id 排序，含 order_id、user_id、item_id、item_name、quantity、unit_price_snapshot_cents、line_total_cents。列表按 order_id 倒序，使用预览字段并增加 is_member、is_host，不包含所有人的菜品。
 
@@ -142,7 +152,7 @@ can_place 仅在 host、Pending 且有菜品时为 true。POST /place 锁定父�
 
 ## 统一订单历史
 
-GET /orders?type=all|group|individual（默认 all）要求买家登录，只列出自己参与的拼单和自己拥有的个人单，返回 {data:{server_time,orders:[...]}}。列表含 order_type、created_at、状态、商家、履约方式和拼单信息；个人单 deadline/group_status 为 null。GET /orders/{id} 为拼单成员返回带 order_type=group 的详情，为个人单拥有者返回 order_type=individual、items、item_subtotal_cents、shipping_fee_cents、total_cents、coupon_applied=false、summary_basis=before_coupons、can_edit/can_cancel/can_place（Pending 可编辑）。他人的个人单返回404，拼单非成员在此接口返回403，应从拼单邀请接口查看预览。个人单创建与修改见下方接口。
+GET /orders?type=all|group|individual（默认 all）要求买家登录，只列出自己参与的拼单和自己拥有的个人单，返回 {data:{server_time,orders:[...]}}。列表含 order_type、created_at、状态、商家、履约方式和拼单信息；个人单 deadline/group_status 为 null。GET /orders/{id} 为拼单成员返回带 order_type=group 的详情，为个人单拥有者返回 order_type=individual、items、金额字段、优惠券字段和 can_edit/can_cancel/can_place（Pending 可编辑）。已用券会减少 `total_cents`。他人的个人单返回404，拼单非成员在此接口返回403，应从拼单邀请接口查看预览。个人单创建与修改见下方接口。
 
 ## 个人单操作
 

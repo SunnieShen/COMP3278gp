@@ -39,7 +39,7 @@ python -m backend.manage init
 python app.py
 ```
 
-打开 http://127.0.0.1:5000。init 创建表、导入原有 160 条 seed 数据，为两个测试买家设置可用密码哈希。目标已有表时拒绝初始化，不会清空原数据库。
+打开 http://127.0.0.1:5000。init 创建表、导入原有 162 条 seed 数据，为两个测试买家设置可用密码哈希。目标已有表时拒绝初始化，不会清空原数据库。
 
 | 买家 | 邮箱 | 密码（仅本地课程演示） |
 |---|---|---|
@@ -50,9 +50,9 @@ python app.py
 
 从商家菜单创建拼单，复制邀请链接，在另一浏览器配置／无痕窗口用另一个账号加入并加菜、改数量、删除。同一浏览器两个普通标签共享登录。详情每 15 秒刷新，也可手动刷新。
 
-配送拼单运费取服务器 DELIVERY_FEE_CENTS（默认 1000 分），DEMO_COURIER_USER_ID 指向 Available 的 seed 骑手（默认 90201）。创建拼单和配送记录在一个事务完成，这是演示简化派单，不是真实配送。0 运费合法，自取没有配送记录；已有订单使用已存运费。均摊余数归 host。所有金额均为优惠券前金额，不是最终支付账单。
+配送拼单运费取服务器 DELIVERY_FEE_CENTS（默认 1000 分），DEMO_COURIER_USER_ID 指向 Available 的 seed 骑手（默认 90201）。创建拼单和配送记录在一个事务完成，这是演示简化派单，不是真实配送。0 运费合法，自取没有配送记录；已有订单使用已存运费。均摊余数归 host。已用优惠券会从餐费中扣减；拼单只从 host 应付中扣除。这仍不是支付账单。
 
-真实页面读取 seed 的 4 家商家、9 个商品，图片是本地展示素材。第一阶段未实现在线支付、收藏、地址、优惠券、商家／骑手界面。不提供提前锁单；Pending 拼单到截止时间自动只读，使用香港时间。取消保留历史记录。
+真实页面读取 seed 的 4 家商家、9 个商品，图片是本地展示素材。收藏和优惠券已实现；在线支付、地址和商家／骑手界面未实现。不提供提前锁单；Pending 拼单到截止时间自动只读，使用香港时间。取消保留历史并释放已绑定的优惠券。Alice 未用券为 `ALICE10`（满 HK$30），Bob 为 `BOB5`。
 
 [前端说明](frontend/README.zh-CN.md) · [接口约定](docs/API.zh-CN.md) · [English contract](docs/API.md)
 
@@ -76,7 +76,7 @@ ER03 可编辑图及导出图片已补充 orders 的 `placed_at`、`completion_d
 
 - 已有 ER 图、业务说明、`db/schema.sql` 和可复现导入脚本 `db/setup.sh`
 - 数据库设计为 **18 张表、2 个视图**，第一阶段只使用其中部分，存在表不代表所有功能均实现。
-- 已接入 Flask/MySQL 后端，支持登录、商家菜单、拼单创建／加入／退出、自己的菜品 CRUD、金额查询和 host 取消。运行见上方。
+- 已接入 Flask/MySQL 后端，支持登录、商家菜单、个人单与拼单、成员及菜品 CRUD、收藏、优惠券、金额查询、提交／取消、订单历史和模拟完成。运行见上方。
 - `ER_Diagram_Details*.md` 保留了多版说明；出现冲突时，应与 ER03 和建表脚本核对后统一。
 
 ## Database Design
@@ -116,7 +116,7 @@ PK = 主键，FK = 外键，UK = 唯一键。
 - **配送**：每条配送记录关联一个订单和一个骑手；订单最多一条配送记录。仅配送订单需要记录，自取订单没有配送记录，新拼单创建接口已维护此条件。
 - **评分**：`seller_rating_view` 计算商家平均分，不在商家表重复保存。分数范围为 1–5。
 - **删除**：当前外键没有配置级联删除，不能假设删除订单会自动清理明细。应明确采用事务按顺序删除关联记录，或经讨论后修改外键规则。
-- **待明确的规则**：当前地址表没有与订单直接关联；订单收货地址如何选择和保存，以及优惠券如何影响拼单分摊，需在相关功能实现前确定。
+- **待明确的规则**：当前地址表没有与订单直接关联；订单收货地址如何选择和保存仍未实现。优惠券按餐费计算折扣，拼单只从 host 应付中扣除。
 
 ### Design decisions and fixture evidence
 
@@ -131,7 +131,7 @@ PK = 主键，FK = 外键，UK = 唯一键。
 | ORDER_ITEM 为 ID-dependent 弱实体，三段式标识键 | ER01 回应中 ADDS / CONTAINS / SELECTS 的绿色双线 | 94002 与 94005 中，92001 由两位不同买家各自添加 | `order_items` 复合主键 |
 | `group_status` 由截止时间派生，`completed` 归入 `order_status` | ER01 回应「group_status 作为 derived attribute from deadline」 | 2099 / 2000 两个截止时间；94009 已 `locked` 但仍是 `Pending` | `group_order_status_view` |
 | `shipping_fee` 挂在 DELIVERY；HAS_DELIVERY 为 1:1 且部分参与 | ER01 回应 DELIVERY 旁绿色「shipping_fee?」圈注 | 10 个配送单各有一条配送；3 个自取单没有；其中一条配送费为 `$0.00` | `deliveries.order_id UNIQUE` |
-| 优惠券是每位买家的一次性券（APPLIES 1:1） | ER01 回应「really?」质疑券复用；ER03 想法 §5 方案 B | 4 张券各用一次、93004 过期未用、5 个订单 `coupon_id` 为 NULL | `orders.coupon_id UNIQUE`、`coupons.buyer_user_id` |
+| 优惠券是每位买家的一次性券（APPLIES 1:1） | ER01 回应「really?」质疑券复用；ER03 想法 §5 方案 B | 4 张券各用一次、93004 过期未用、93006/93007 演示未用券、5 个订单 `coupon_id` 为 NULL | `orders.coupon_id UNIQUE`、`coupons.buyer_user_id` |
 | ORDERS 作为个人单 / 拼单的父类 | ER02 问题「shared features」与手绘 ISA 草图；ER03 想法 §4 | 13 个订单 = 4 个个人单 + 9 个拼单，共用 host、商家、状态字段 | `orders` + 两张子类表 |
 | 拼单费用分摊覆盖参与人数边界 | ER03 特殊情况 sample data 建议 §2 | 94101 / 94102 / 94103 分别有 1 / 3 / 4 名参与者，配送费为 `$10.00` / `$10.00` / `$10.02` | `group_order_participants`、`deliveries.shipping_fee` |
 | 价格快照不受菜单改价影响 | ER02 问题 `unit price snapshot` | 94001 / 92003 保存 16.50，而当前价为 18.50 | `order_items.unit_price_snapshot` |
@@ -147,8 +147,10 @@ PK = 主键，FK = 外键，UK = 唯一键。
 | 加菜／改数量／删菜 | Create / Read / Update / Delete | order_items |
 | 成员餐费、运费均摊与订单历史 | Read | orders, order_items, group_order_participants, deliveries |
 | 提交／取消草稿，模拟完成 | Update | orders, deliveries |
+| 收藏／取消收藏商家和菜品 | Create / Read / Delete | favorite_sellers, favorite_items |
+| 查看优惠券；在草稿订单上使用／移除 | Read / Update | coupons, orders |
 
-取消保留历史；删除菜品和退出拼单会实际执行 DELETE。餐费使用 `SUM(quantity * unit_price_snapshot)`，运费按整数分均摊、余数归 host，自取无运费。注册、收藏、地址／优惠券管理、商家工具和在线支付尚未实现。
+取消保留历史；删除菜品和退出拼单会实际执行 DELETE。餐费使用 `SUM(quantity * unit_price_snapshot)`，运费按整数分均摊、余数归 host，自取无运费。优惠券与订单 1:1；拼单由 host 用券，折扣从 host 应付中扣除。注册、地址选择、商家工具和在线支付尚未实现。
 
 ### Representative SQL
 
@@ -204,7 +206,7 @@ mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
 bash db/seed.sh
 ```
 
-脚本会将 160 条相互关联的测试记录从 `db/seed.sql` 导入选定数据库，并提示输入 MySQL 密码。数据覆盖多个买家和商家、在售及停售商品、已使用及过期优惠券、个人单和不同截止状态的拼单、多种订单状态、配送和自取、评分、收藏及不同配送进度。在拼单 `94002` 和 `94005` 中，不同买家都添加了同一个菜品，体现同一拼单中多人可选择相同菜品的情况。拼单 `94101`–`94103` 覆盖 1、3、4 人参与及配送费余数分摊；个人单 `94104` 覆盖零运费配送。其他边界情况包括：有 2 个地址的买家与 0 个地址的买家、无商品且无评分的商家、无配送记录的骑手、收藏关系 M:N 的两个方向，以及与当前价不同的历史价格快照。各情况支撑哪项设计决策见 [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence)；这批数据是覆盖清单，不追求条数。数据使用专用 ID 和 upsert，重复运行会更新同一批测试记录，不会重复新增。可使用与 `db/setup.sh` 相同的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_DATABASE` 环境变量指定连接信息。测试账号的密码哈希是占位值，仅用于数据库测试。
+脚本会将 162 条相互关联的测试记录从 `db/seed.sql` 导入选定数据库，并提示输入 MySQL 密码。数据覆盖多个买家和商家、在售及停售商品、已使用、未使用及过期优惠券、个人单和不同截止状态的拼单、多种订单状态、配送和自取、评分、收藏及不同配送进度。在拼单 `94002` 和 `94005` 中，不同买家都添加了同一个菜品，体现同一拼单中多人可选择相同菜品的情况。拼单 `94101`–`94103` 覆盖 1、3、4 人参与及配送费余数分摊；个人单 `94104` 覆盖零运费配送。其他边界情况包括：有 2 个地址的买家与 0 个地址的买家、无商品且无评分的商家、无配送记录的骑手、收藏关系 M:N 的两个方向，以及与当前价不同的历史价格快照。各情况支撑哪项设计决策见 [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence)；这批数据是覆盖清单，不追求条数。数据使用专用 ID 和 upsert，重复运行会更新同一批测试记录，不会重复新增。可使用与 `db/setup.sh` 相同的 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_DATABASE` 环境变量指定连接信息。测试账号的密码哈希是占位值，仅用于数据库测试。
 
 ### 使用 MySQL 命令行查看数据
 

@@ -22,6 +22,8 @@ Open http://127.0.0.1:5000. A static server or opening index.html directly canno
 - Delivery or pickup; shipping split in integer cents, remainder assigned to the host.
 - A host can submit a nonempty group before or after its deadline; joining/editing stops at the deadline or submission.
 - Orders shows the current buyer’s individual and joined group history, including Completed, with filters, counts and refresh.
+- Favourites: save stores and dishes with the heart; list them under Favourites.
+- Coupons: view vouchers and apply a code on a pending individual order or, as host, on a group order. The group discount comes off the host’s share.
 - Submitted orders are read-only and complete after a simulated 15–60 minutes. Pages poll every 15 seconds.
 
 Use Alice and Bob in separate browser profiles or normal/private windows; ordinary tabs share a login. Credentials, migration commands, lifecycle details and tests are in the [project guide](../README.md). Email starts blank at login.

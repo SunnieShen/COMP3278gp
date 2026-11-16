@@ -101,7 +101,7 @@ class APIIntegration(unittest.TestCase):
             if row['Table_type']=='BASE TABLE':
                 name=next(v for k,v in row.items() if k!='Table_type')
                 total+=self.sql(f'SELECT COUNT(*) AS n FROM `{name}`')[0]['n']
-        self.assertEqual(total,160)
+        self.assertEqual(total,162)
 
     def test_auth_csrf_and_no_password_leak(self):
         anon=self.app.test_client()
@@ -173,7 +173,11 @@ class APIIntegration(unittest.TestCase):
             self.assertEqual(g['shipping_fee_cents'],0)
             self.assertEqual(len(self.sql('SELECT * FROM deliveries WHERE order_id=%s',(oid,))),int(fulfillment=='Delivery'))
         g=self.a.get('/api/v1/group-orders/94002').json['data']
-        self.assertFalse(g['coupon_applied']);self.assertEqual(g['summary_basis'],'before_coupons')
+        self.assertTrue(g['coupon_applied']);self.assertEqual(g['summary_basis'],'after_coupons')
+        self.assertEqual(g['coupon_code'],'WELCOME10');self.assertEqual(g['discount_cents'],1000)
+        host=next(m for m in g['members'] if m['is_host'])
+        self.assertEqual(host['discount_cents'],1000)
+        self.assertEqual(host['total_cents'],host['item_subtotal_cents']+host['shipping_share_cents']-1000)
 
     def test_expiry_and_cancel(self):
         oid=self.create();base=f'/group-orders/{oid}'
@@ -277,7 +281,9 @@ class APIIntegration(unittest.TestCase):
         self.assertEqual(receipt['order_type'],'individual')
         self.assertEqual(receipt['item_subtotal_cents'],5800)
         self.assertEqual(receipt['shipping_fee_cents'],0)
-        self.assertEqual(receipt['total_cents'],5800)
+        self.assertTrue(receipt['coupon_applied'])
+        self.assertEqual(receipt['discount_cents'],500)
+        self.assertEqual(receipt['total_cents'],5300)
         self.assertFalse(receipt['can_edit'])
         self.assertEqual(self.a.get('/api/v1/orders/94001').status_code,404)
         self.assertEqual(self.a.get('/api/v1/orders/94102').status_code,403)
@@ -360,6 +366,63 @@ class APIIntegration(unittest.TestCase):
         self.assertEqual(self.sql('SELECT * FROM deliveries WHERE order_id=%s',(oid,)),[])
         self.assertEqual(self.sql('SELECT order_status FROM orders WHERE order_id=94007')[0]['order_status'],'Cancelled')
         self.assertEqual(self.sql('SELECT order_status FROM orders WHERE order_id=94104')[0]['order_status'],'Confirmed')
+
+    def test_favorites_list_toggle_and_isolation(self):
+        saved=self.a.get('/api/v1/favorites').json['data']
+        self.assertEqual([s['seller_user_id'] for s in saved['sellers']],[90102,90101])
+        self.assertEqual([i['item_id'] for i in saved['items']],[92001])
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/sellers/90103','PUT').status_code,200)
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/sellers/90103','PUT').status_code,200)
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/items/92002','PUT').status_code,200)
+        saved=self.a.get('/api/v1/favorites').json['data']
+        self.assertIn(90103,[s['seller_user_id'] for s in saved['sellers']])
+        self.assertIn(92002,[i['item_id'] for i in saved['items']])
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/sellers/90103','DELETE').status_code,204)
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/sellers/90103','DELETE').status_code,204)
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/items/92002','DELETE').status_code,204)
+        bob=self.b.get('/api/v1/favorites').json['data']
+        self.assertEqual([s['seller_user_id'] for s in bob['sellers']],[90102])
+        self.assertEqual([i['item_id'] for i in bob['items']],[92001])
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/sellers/99999','PUT').status_code,404)
+        self.assertEqual(self.write(self.a,self.ta,'/favorites/items/99999','PUT').status_code,404)
+        self.assertEqual(self.app.test_client().get('/api/v1/favorites').status_code,401)
+
+    def test_coupons_apply_min_spend_host_only_and_release_on_cancel(self):
+        wallet=self.a.get('/api/v1/coupons').json['data']
+        self.assertEqual({c['coupon_code']:c['usable'] for c in wallet},{'WELCOME10':False,'ALICE10':True})
+        created=self.write(self.a,self.ta,'/orders',data={'seller_user_id':90101,'fulfillment_type':'Delivery'})
+        oid=created.json['data']['order_id'];path=f'/orders/{oid}'
+        self.assertEqual(self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'}).status_code,409)
+        self.write(self.a,self.ta,path+'/items/92002','PUT',{'quantity':1})
+        too_low=self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'})
+        self.assertEqual(too_low.json['error']['code'],'COUPON_MIN_SPEND')
+        self.write(self.a,self.ta,path+'/items/92001','PUT',{'quantity':1})
+        used=self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'WELCOME10'})
+        self.assertEqual(used.json['error']['code'],'COUPON_USED')
+        applied=self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'})
+        self.assertEqual(applied.status_code,200,applied.json)
+        self.assertTrue(applied.json['data']['coupon_applied'])
+        self.assertEqual(applied.json['data']['discount_cents'],1000)
+        self.assertEqual(applied.json['data']['total_cents'],applied.json['data']['item_subtotal_cents']+applied.json['data']['shipping_fee_cents']-1000)
+        self.assertEqual(self.write(self.b,self.tb,path+'/coupon','PUT',{'coupon_code':'BOB5'}).status_code,404)
+        self.assertEqual(self.write(self.a,self.ta,path+'/coupon','DELETE').status_code,200)
+        self.assertFalse(self.a.get('/api/v1'+path).json['data']['coupon_applied'])
+        self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'})
+        self.assertEqual(self.write(self.a,self.ta,path+'/cancel').status_code,200)
+        self.assertTrue(next(c for c in self.a.get('/api/v1/coupons').json['data'] if c['coupon_code']=='ALICE10')['usable'])
+        oid=self.create();gpath=f'/group-orders/{oid}'
+        self.write(self.a,self.ta,gpath+'/items/92001','PUT',{'quantity':1})
+        self.assertEqual(self.write(self.b,self.tb,gpath+'/coupon','PUT',{'coupon_code':'BOB5'}).status_code,403)
+        grouped=self.write(self.a,self.ta,gpath+'/coupon','PUT',{'coupon_code':'ALICE10'})
+        self.assertEqual(grouped.status_code,200,grouped.json)
+        host=next(m for m in grouped.json['data']['members'] if m['is_host'])
+        self.assertEqual(host['discount_cents'],1000)
+        self.assertEqual(self.write(self.a,self.ta,gpath+'/place').status_code,200)
+        self.assertFalse(next(c for c in self.a.get('/api/v1/coupons').json['data'] if c['coupon_code']=='ALICE10')['usable'])
+        missing=self.write(self.a,self.ta,'/orders',data={'seller_user_id':90101,'fulfillment_type':'Self-Pickup'})
+        mid=missing.json['data']['order_id']
+        self.write(self.a,self.ta,f'/orders/{mid}/items/92001','PUT',{'quantity':1})
+        self.assertEqual(self.write(self.a,self.ta,f'/orders/{mid}/coupon','PUT',{'coupon_code':'NOSUCH'}).json['error']['code'],'COUPON_NOT_FOUND')
 
 
 if __name__=='__main__':
