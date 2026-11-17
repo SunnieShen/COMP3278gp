@@ -2,15 +2,23 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-**foodpanda** — COMP3278 final project.
+**Group Eats (foodpanda)** — COMP3278 final project.
 
-Buyers can place solo orders or create and join group orders, with each member adding their own items. The database design also covers sellers, couriers, addresses, favourites, ratings, coupons and deliveries.
+Buyers place individual orders or create and join group orders. Each member adds their own items. The application is a local Flask website connected to MySQL. The browser never connects to the database directly.
 
-## Run the integrated application
+The schema contains **18 tables and 2 views**. The running application supports login, store and menu browsing, individual and group orders, item CRUD, favourites, coupons, place/cancel, order history, and simulated completion.
 
-Requirements: Python 3.10+ and a running MySQL 8.0.16+ server (verified with MySQL 8.4.7). The app serves its frontend and API together; no npm or separate static server is needed.
+## Requirements
 
-**Linux / macOS / WSL (first setup):**
+- Python 3.10 or later
+- MySQL 8.0.16 or later (CHECK constraints must be enforced)
+- A MySQL account that can create a database and tables
+
+No Node.js or separate static server is required. Flask serves the web pages and the API together.
+
+## 1. Install the application
+
+**Linux / macOS / WSL:**
 
 ```bash
 python3 -m venv .venv
@@ -19,7 +27,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**Windows PowerShell (first setup):**
+**Windows PowerShell:**
 
 ```powershell
 py -m venv .venv
@@ -28,134 +36,166 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Only copy the template on first setup; keep an existing `.env`. Both platforms use the same configuration and tests.
+Copy `.env.example` only on first setup. Do not overwrite an existing `.env`.
 
-**Configuration on all platforms:** Edit `.env`: set your MySQL host, port, account/password and a **new empty** database name. Generate a private `SECRET_KEY` with `python -c "import secrets; print(secrets.token_hex(32))"`. The MySQL account needs permission to create the selected database/tables (or use an already-created empty database).
+## 2. Configure the database connection
+
+Edit `.env`:
+
+| Variable | Purpose | Example |
+|---|---|---|
+| `SECRET_KEY` | Flask session secret | generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `MYSQL_HOST` | MySQL host | `127.0.0.1` |
+| `MYSQL_PORT` | MySQL port | `3306` |
+| `MYSQL_USER` | MySQL user | `root` |
+| `MYSQL_PASSWORD` | MySQL password | the password set when MySQL was installed |
+| `MYSQL_DATABASE` | Empty target database name | `group_eats` |
+| `PORT` | Website port | `5000` |
+
+`DELIVERY_FEE_CENTS` defaults to `1000` (HK$10.00). `DEMO_COURIER_USER_ID` defaults to seeded courier `90201`.
+
+## 3. Create the schema and load sample data
+
+Start the MySQL server, then from the repository root:
 
 ```bash
 python -m backend.manage init
+```
+
+`init` does the following in the database named by `MYSQL_DATABASE`:
+
+1. Creates the database if it does not exist.
+2. Runs `db/schema.sql` (18 tables and 2 views).
+3. Imports `db/seed.sql` (162 related records).
+4. Sets usable password hashes for the two demo buyers.
+
+It refuses a database that already contains tables and does not delete an existing application database. To reproduce from scratch, use a new empty `MYSQL_DATABASE` name.
+
+The seed data includes buyers, sellers, menu items, coupons, solo and group orders, favourites, ratings, and deliveries.
+
+Alternative shell import (same schema and seed; then set demo passwords):
+
+```bash
+bash db/setup.sh
+bash db/seed.sh
+python -m backend.manage demo-accounts
+```
+
+`setup.sh` and `seed.sh` prompt for the MySQL password. Importing `seed.sql` alone leaves placeholder hashes until `demo-accounts` is run.
+
+## 4. Run the application
+
+```bash
 python app.py
 ```
 
-Open http://127.0.0.1:5000. `init` creates the schema, imports the existing 162 seed records, and assigns usable password hashes to the two demo buyers. It refuses a database containing tables; it never resets an existing application database. Login credentials, for local course demos only:
+Open **http://127.0.0.1:5000**.
+
+If that address is not the Group Eats site (on some macOS machines port 5000 is used by AirPlay), set `PORT=5001` in `.env`, restart `python app.py`, and open **http://127.0.0.1:5001**.
+
+Leave the terminal running while using the site. Stop the server with Ctrl+C.
+
+### Demo accounts
+
+Local course demonstration only:
 
 | Buyer | Email | Password |
 |---|---|---|
 | Alice | alice@example.com | DemoPass3278! |
 | Bob | bob@example.com | DemoPass3278! |
 
-`migrate` adds missing demo coupons using generated IDs, preserving existing vouchers, their terms and order links; repeating it does not issue duplicates.
+There is no registration. Use Alice in a normal window and Bob in a private window to join the same group. Two ordinary tabs share one login.
 
-For an existing ER03 database, first run `python -m backend.manage migrate` to rename the creation timestamp to `created_at` and add completion timestamps/index without resetting data. For a database already using the current schema, run `python -m backend.manage seed` to upsert fixtures and prepare these accounts, or `python -m backend.manage demo-accounts` to change only the two demo password hashes. Reseeding restores fixture values, so do not do it during a demo. If the database uses the old orders.buyer_user_id column, first apply the documented migration below. The original shell import scripts remain available; importing raw seed.sql restores placeholder passwords until demo-accounts is run.
+Alice’s unused coupon code is `ALICE10` (minimum HK$30). Bob’s is `BOB5`. Apply the code on a pending order. A group coupon is applied by the host and reduces the host’s share only. After a group deadline, the host may still remove a coupon from a pending group, then place the order. Adding or replacing a coupon, and editing items, still require an open group.
 
-Create a group from a seller's menu. Open its copied invite link in another browser profile/private window, log in as the other buyer, join, and add/change/remove your own items. Two ordinary tabs share a session. Group details refresh every 15 seconds and have a manual Refresh button.
+## 5. Inspect the data
 
-Delivery groups use the server's `DELIVERY_FEE_CENTS` (default 1000); configure `DEMO_COURIER_USER_ID` to an Available seeded courier (90201 by default). A delivery record is created atomically with the group. This is demo assignment, not real dispatch. Zero is a valid fee; pickup has no delivery record. Existing orders use their saved delivery fees. Remainder cents go to the host. An attached coupon discounts the food subtotal; on a group order it comes off the host’s share only. This is still not a payment demand.
+After a page action, query MySQL. Result grids do not refresh by themselves; run the SELECT again.
 
-The real UI reads the 4 seeded sellers and their 9 items. Images are local presentation assets, not database columns. Favourites and coupons are implemented; online payment, addresses and merchant/courier screens are not. There is no early-lock action: Pending groups become read-only at the deadline, using Hong Kong time. Cancellation preserves records and releases any attached coupon. Alice’s unused demo code is `ALICE10` (min HK$30); Bob’s is `BOB5`.
-
-[Frontend details](frontend/README.md) · [API contract](docs/API.md) · [中文接口约定](docs/API.zh-CN.md)
-
-## Task Allocation
-
-| Task | Description | Assigned To |
-|---|---|---|
-| ER Diagram | Identify entities, attributes, and relationships. | Cheng Hengqi |
-| Relational Schema | Define tables, keys, and constraints. | Shen Hongshan |
-| Database Implementation | Set up MySQL, tables, and sample data. | Gong Jianxiang |
-| Frontend, Code Review & README | Build the frontend, review code, and document setup. | Zhen Qi |
-| Backend & Integration | Implement SQL and connect the frontend to MySQL. | Yang Ruizhen |
-
-## Current Design & Progress
-
-The ER03 source and exported image include `placed_at`, `completion_due_at` and `completed_at` on orders, distinguishing deadline-derived group status from order lifecycle. See the [latest design notes](ER_Diagram_Details04.md).
-
-This README follows the [ER03 diagram](ER/ER03.png), its [editable source](ER/ER03.drawio) and the [relational schema and creation script](db/schema.sql), replacing the previous six-table design.
-
-![Current ER diagram](ER/ER03.png)
-
-- The ER diagram, business descriptions, `db/schema.sql` and reproducible import script `db/setup.sh` are available.
-- The database design contains **18 tables and 2 views**. Phase-one integration uses a subset; a table being present does not mean its entire feature is implemented.
-- The frontend uses Flask/MySQL for login, catalog browsing, individual/group ordering, membership, item CRUD, favourites, coupon application, submission/cancellation, history and simulated completion.
-- `ER_Diagram_Details*.md` contains several design revisions. Resolve discrepancies against ER03 and the schema script.
-
-## Database Design
-
-### Tables
-
-PK = primary key; FK = foreign key; UK = unique key.
-
-| Table | Main fields / keys | Purpose |
-|---|---|---|
-| `users` | `user_id` PK, `username`, `email` UK, `phone_number`, `password_hash` | Base account information |
-| `buyers` | `user_id` PK/FK → users | Buyer subtype |
-| `sellers` | `user_id` PK/FK → users | Seller subtype |
-| `couriers` | `user_id` PK/FK → users, `vehicle_type`, `license_plate_number`, `availability_status` | Courier subtype |
-| `restaurants` | `user_id` PK/FK → sellers, `cuisine_type`, `active_status` | Restaurant subtype |
-| `grocery_stores` | `user_id` PK/FK → sellers, `store_category` | Grocery-store subtype |
-| `addresses` | `address_id` PK, `buyer_user_id` FK, `address_line`, `label` | Saved buyer addresses |
-| `menu_items` | `item_id` PK, `seller_user_id` FK, `item_name`, `price`, `availability_status` | Items offered by a seller |
-| `coupons` | `coupon_id` PK, `buyer_user_id` FK, `coupon_code`, `discount_value`, `minimum_spend_threshold`, `expiry_date` | Buyer-owned coupons |
-| `orders` | `order_id` PK, `host_user_id` FK → buyers, `seller_user_id` FK → sellers, `coupon_id` UK/FK, `created_at`, `order_status`, `fulfillment_type`, `placed_at`, `completion_due_at`, `completed_at` | Shared order information; host is the placing buyer |
-| `solo_orders` | `order_id` PK/FK → orders | Solo-order subtype |
-| `group_orders` | `order_id` PK/FK → orders, `deadline` | Group-order subtype |
-| `group_order_participants` | (`order_id`, `buyer_user_id`) composite PK/FKs | Many-to-many group membership |
-| `order_items` | (`order_id`, `user_id`, `item_id`) composite PK/FKs, `quantity`, `unit_price_snapshot` | Items added by each buyer, with price snapshots |
-| `favorite_sellers` | (`buyer_user_id`, `seller_user_id`) composite PK/FKs, `saved_time` | Unique buyer/seller favourites |
-| `favorite_items` | (`buyer_user_id`, `item_id`) composite PK/FKs, `saved_time` | Unique buyer/item favourites |
-| `seller_ratings` | (`buyer_user_id`, `seller_user_id`) composite PK/FKs, `score` | One rating per buyer/seller pair |
-| `deliveries` | `delivery_id` PK, `order_id` UK/FK, `courier_user_id` FK, `delivery_status`, `delivery_timestamp`, `shipping_fee` | Delivery records and shipping fees |
-
-### ER Rules & Implementation Notes
-
-- **Total, disjoint ISA:** Each user is exactly one of buyer, seller or courier; each seller is exactly one of restaurant or grocery store; each order is exactly one of solo or group. Separate subtype tables are used. Foreign keys alone do not enforce completeness or exclusivity; application logic or triggers are still needed.
-- **Order ownership:** `orders.host_user_id` identifies the one placing buyer (the host) and `seller_user_id` identifies the seller. Group orders connect multiple buyers through the participation table, which must also include the host. `group_order_participants.buyer_user_id` identifies all participants; it is not a second order owner column.
-- **Order items:** The order, buyer and item IDs form a composite identity. `unit_price_snapshot` preserves historical prices. The backend validates membership and ensures each item belongs to the order's seller.
-- **Group status:** `group_order_status_view` derives `open` / `locked` from the deadline. Completion and cancellation use `orders.order_status`. The backend prevents membership and item changes after the deadline. There is no separate manual-lock action; an early submission uses Confirmed to stop edits before the deadline.
-- **Coupons:** Each coupon belongs to one buyer. An order accepts at most one coupon, and the unique constraint on `orders.coupon_id` limits a coupon to one order. Ownership, expiry and minimum spend require backend validation.
-- **Deliveries:** Each delivery references one order and one courier; an order has at most one delivery. Delivery orders require a delivery record, while self-pickup orders have none. The creation endpoint enforces this condition for new groups.
-- **Ratings:** `seller_rating_view` calculates the average score rather than storing it on the seller. Scores range from 1 to 5.
-- **Deletion:** Current foreign keys do not cascade deletes. Define transactional deletion of dependent records, or agree on changes to the foreign-key rules.
-- **Deferred features:** Addresses are not directly linked to orders; address selection, merchant tools and online payment remain outside phase one. Coupons are applied by code on a pending order; they are not allocated from a merchant admin screen.
-
-### Design decisions and fixture evidence
-
-The revisions came from three annotated review rounds kept outside this repository (`ER01问题.pdf`, `ER01问题 回应.pdf`, `Foodpanda_ER_02 问题.pdf`, `关于Foodpanda_ER_03的想法.pdf`). `db/seed.sql` is deliberately small: for each decision there is at least one row that the earlier design could not represent without loss, duplication or redundancy. Case coverage, not row count, is the criterion.
-
-| Design decision | Raised in review | Fixture evidence | Schema object |
-|---|---|---|---|
-| One account = exactly one role (total, disjoint ISA) | ER01 red note "必须为 buyer/seller/courier 中的一种"; ER03 想法 §1 | 15 users split into 90001–90008 buyers, 90101–90104 sellers, 90201–90203 couriers, no overlap | `users` + three role tables |
-| Surrogate `address_id`; a buyer may have 0..N addresses | ER02 问题 (same `address_line` for different buyers); ER03 想法 §2 | 90001 → 91001 + 91008; 90008 → none | `addresses` PK / FK |
-| No duplicate favourites; M:N works in both directions | ER01 "一个买家不能多次收藏同一个商家"; ER03 想法 §3 | 90001 favourites 90101 and 90102; 92001 is favourited by 90001 and 90002 | composite PKs on both favourites tables |
-| `rating` is derived, backed by a RATE M:N relationship | ER01 回应 ① blue `buyer — rate — seller` sketch, two old `rating` ellipses crossed out | 7 scores → 4.1667 / 4.25 / 3.75; 90104 → NULL via LEFT JOIN | `seller_ratings`, `seller_rating_view` |
-| ORDER_ITEM is an ID-dependent weak entity with a three-part key | ER01 回应 green double outlines on ADDS / CONTAINS / SELECTS | 94002 and 94005: item 92001 added by two different buyers | `order_items` PK |
-| `group_status` derived from deadline; `completed` belongs to `order_status` | ER01 回应 "group_status 作为 derived attribute from deadline" | 2099 / 2000 deadlines; 94009 is `locked` but still `Pending` | `group_order_status_view` |
-| `shipping_fee` on DELIVERY; HAS_DELIVERY is 1:1 and partial | ER01 回应 green "shipping_fee?" circle near DELIVERY | 10 Delivery orders have exactly one delivery; 3 Self-Pickup orders have none; one delivery has a `$0.00` fee | `deliveries.order_id UNIQUE` |
-| Coupon is a per-buyer, single-use voucher (1:1 APPLIES) | ER01 回应 "really?" on coupon reuse; ER03 想法 §5 Option B | 4 coupons used once each, 93004 expired unused, 93006/93007 unused demo vouchers, 5 orders with NULL coupon | `orders.coupon_id UNIQUE`, `coupons.buyer_user_id` |
-| ORDERS supertype over solo / group orders | ER02 问题 "shared features" + hand-drawn ISA sketch; ER03 想法 §4 | 13 orders = 4 solo + 9 group sharing host, seller and status | `orders` + two subtype tables |
-| Group cost allocation handles participant-count boundaries | ER03 special-case sample data recommendation §2 | 94101 / 94102 / 94103 have 1 / 3 / 4 participants and delivery fees of `$10.00` / `$10.00` / `$10.02` | `group_order_participants`, `deliveries.shipping_fee` |
-| Price snapshot must survive catalogue changes | ER02 问题 `unit price snapshot` | 94001 / 92003 stores 16.50 while the current price is 18.50 | `order_items.unit_price_snapshot` |
-| The 0 side of participation is real | ER01 "一个骑手可接 0 或 ≥1 单"; "新卖家尚未列出菜单项" | 90203 has no deliveries; 90104 has no items and no ratings | role tables, `LEFT JOIN` in the views |
-
-## Implemented Features & CRUD Mapping
-
-| Feature | CRUD | Main tables |
-|---|---|---|
-| Buyer login and store/menu browsing | Read | users, buyers, sellers, menu_items |
-| Create individual / group drafts | Create | orders, solo_orders / group_orders, deliveries |
-| Join / leave a group | Create / Delete | group_order_participants, order_items |
-| Add food / change quantity / remove food | Create / Read / Update / Delete | order_items |
-| Member subtotals, delivery shares and order history | Read | orders, order_items, group_order_participants, deliveries |
-| Place / cancel a draft; simulated completion | Update | orders, deliveries |
-| Save / unsave stores and dishes | Create / Read / Delete | favorite_sellers, favorite_items |
-| List coupons; apply / remove on a pending order | Read / Update | coupons, orders |
-
-Cancellation retains history; removing items and leaving groups perform actual DELETE operations. Item totals use `SUM(quantity * unit_price_snapshot)`. Shipping is split in integer cents with remainder assigned to the host; pickup has no delivery fee. A coupon is 1:1 with an order; the host applies a group voucher and the discount is subtracted from the host share. Registration, address selection, merchant tools and online payment are outside the implemented scope.
-
-### Representative SQL
+**MySQL Workbench:** connect to `127.0.0.1:3306` with the same user, password, and database as `.env`. Open a SQL tab and run:
 
 ```sql
--- Item subtotals per member, including members with no items; excludes shipping and coupons.
+SELECT DATABASE();
+SHOW TABLES;
+SELECT order_id, host_user_id, order_status, coupon_id
+FROM orders
+WHERE host_user_id = 90001
+ORDER BY order_id DESC
+LIMIT 10;
+SELECT buyer_user_id, seller_user_id, saved_time
+FROM favorite_sellers
+WHERE buyer_user_id = 90001;
+```
+
+Alice is `user_id` `90001`. Harbour Cafe is seller `90101`.
+
+**MySQL command line:**
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p group_eats
+```
+
+Use the host, port, user, and database from `.env`.
+
+## 6. Tests
+
+With the virtual environment active, MySQL running, and `.env` configured:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The suite creates a temporary `group_eats_test_*` database, imports the real schema and seed, then drops that test database. It does not clear `MYSQL_DATABASE`. The MySQL account needs `CREATE` and `DROP DATABASE` privileges. The suite contains 26 integration tests.
+
+## How to use the site
+
+1. Log in as Alice.
+2. Open a store (the seed set used by the UI is 4 sellers and 9 items).
+3. **Order for myself** creates an individual order, or **Start a group order** creates a group with a deadline.
+4. Add, change, or remove items. Place the order, or cancel it before placement.
+5. For a group, copy the invite link, log in as Bob in a private window, join, and add Bob’s own items.
+6. Hearts save stores and dishes. Coupons are listed under Coupons and applied on a pending order.
+
+Cancellation keeps the order row and sets `coupon_id` to NULL. Confirmed orders are read-only. Pending groups become read-only for joining and item edits at the deadline (Hong Kong time). The host may place a non-empty group before or after the deadline. Placement is not online payment.
+
+## Database design
+
+The schema follows [ER03](ER/ER03.png) ([draw.io source](ER/ER03.drawio)) and `db/schema.sql`.
+
+![ER diagram](ER/ER03.png)
+
+| Table | Purpose |
+|---|---|
+| `users`, `buyers`, `sellers`, `couriers` | Accounts; each user has exactly one role |
+| `restaurants`, `grocery_stores` | Seller subtypes |
+| `addresses` | Saved buyer addresses (not selected at checkout) |
+| `menu_items` | Seller catalogue |
+| `coupons` | Per-buyer vouchers; at most one coupon per order |
+| `orders`, `solo_orders`, `group_orders` | Shared order header and subtypes |
+| `group_order_participants` | Group membership |
+| `order_items` | Lines with `unit_price_snapshot` |
+| `favorite_sellers`, `favorite_items` | Favourites |
+| `seller_ratings` | One score per buyer/seller pair; averages in `seller_rating_view` |
+| `deliveries` | At most one delivery per order; none for pickup |
+| `group_order_status_view` | `open` / `locked` from the group deadline |
+
+### Implemented operations
+
+| Feature | SQL effect | Tables |
+|---|---|---|
+| Login and catalogue | Read | `users`, `buyers`, `sellers`, `menu_items` |
+| Create individual / group order | Create | `orders`, `solo_orders` / `group_orders`, `deliveries` |
+| Join / leave a group | Create / Delete | `group_order_participants`, `order_items` |
+| Add / change / remove items | Create / Update / Delete | `order_items` |
+| Place / cancel | Update | `orders` (`coupon_id` cleared on cancel) |
+| Favourites | Create / Read / Delete | `favorite_sellers`, `favorite_items` |
+| Apply / remove a coupon | Update | `orders`, `coupons` |
+
+Not implemented: account registration, checkout address selection, online payment, and merchant or courier screens.
+
+### Sample queries (after `init`)
+
+```sql
 SELECT p.order_id, u.user_id, u.username,
        COALESCE(SUM(i.quantity * i.unit_price_snapshot), 0) AS item_subtotal
 FROM group_order_participants p
@@ -165,138 +205,53 @@ LEFT JOIN order_items i
 WHERE p.order_id = 94002
 GROUP BY p.order_id, u.user_id, u.username;
 
--- Read group status derived from the deadline.
 SELECT order_id, deadline, group_status
 FROM group_order_status_view;
 ```
 
-With `db/seed.sql` imported, the first query returns `90001 = 68.00` and `90002 = 112.00` (total `180.00`); the second returns six `open` and three `locked` group orders. These results were verified against the imported seed on MySQL 8.4.7.
+The first query returns `90001 = 68.00` and `90002 = 112.00`. The second returns six `open` and three `locked` group orders.
 
-## Environment & Setup
+## Task allocation
 
-### Database
+| Task | Description | Assigned to |
+|---|---|---|
+| ER Diagram | Identify entities, attributes, and relationships. | Cheng Hengqi |
+| Relational Schema | Define tables, keys, and constraints. | Shen Hongshan |
+| Database Implementation | Set up MySQL, tables, and sample data. | Gong Jianxiang |
+| Frontend, Code Review & README | Build the frontend, review code, and document setup. | Zhen Qi |
+| Backend & Integration | Implement SQL and connect the frontend to MySQL. | Yang Ruizhen |
 
-Use MySQL **8.0.16+** so that CHECK constraints are enforced. From the repository root, run the following command. The script creates the database if needed, imports `db/schema.sql`, and prompts for the MySQL password:
-
-```bash
-bash db/setup.sh
-```
-
-Connection settings and the target database can be overridden with environment variables:
-
-```bash
-MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=root MYSQL_DATABASE=group_eats bash db/setup.sh
-```
-
-The target database must be new and empty; `schema.sql` is not a reset script and rerunning it against existing tables will fail. Use a new `MYSQL_DATABASE` when reproducing the import. The documented import command was run successfully against the local MySQL database.
-
-For an existing database created from the previous schema, apply the one-time column rename before importing the updated test data:
-
-```bash
-mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
-```
-
-The migration renames `orders.buyer_user_id` to `orders.host_user_id`; it preserves existing values and the foreign key.
-
-#### Test Data
-
-After creating the schema, import the test fixtures with:
-
-```bash
-bash db/seed.sh
-```
-
-The script imports 162 related test records from `db/seed.sql` into the selected database and prompts for the MySQL password. Fixtures cover multiple buyers and sellers, available and unavailable items, used, unused and expired coupons, solo and group orders with open and locked deadlines, different order statuses, delivery and pickup, ratings, favourites, and deliveries in different stages. In group orders `94002` and `94005`, two different buyers each add the same menu item, demonstrating that an item can be selected by multiple participants in one order. Additional group-order fixtures `94101`–`94103` cover 1, 3 and 4 participants and delivery-fee remainder allocation; solo order `94104` covers a zero-fee delivery. Other boundary cases include a buyer with two addresses and one with none, a seller with no items and no ratings, a courier with no deliveries, both directions of the favourites M:N relationships, and a historical price snapshot. See [Design decisions and fixture evidence](#design-decisions-and-fixture-evidence) for the decision each case supports; the fixture set is a coverage checklist, not a volume exercise. It uses reserved fixture IDs and upserts, so rerunning it updates the same fixture records. To select a different connection or database, use the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER` and `MYSQL_DATABASE` environment variables as `db/setup.sh`. The accounts use placeholder password hashes and are for database testing only.
-
-### Inspect the database with the MySQL CLI
-
-Keep MySQL running, then open another terminal. Use the host, port, user and database from your own `.env`. For a typical password-protected installation:
-
-```bash
-mysql -h 127.0.0.1 -P 3306 -u root -p group_eats
-```
-
-The temporary local instance prepared on Kelly's current WSL machine instead uses port **33307**, database **group_eats_local** and an empty root password:
-
-```bash
-mysql -h 127.0.0.1 -P 33307 -u root group_eats_local
-```
-
-That second command is specific to this machine, not a required setting for teammates. The server must be running; the prepared local startup script starts it together with the website. If `mysql` is unavailable on another machine, install the MySQL command-line client or use MySQL Workbench.
-
-At the `mysql>` prompt:
-
-```sql
-SELECT DATABASE();
-SHOW TABLES;
-SELECT order_id, host_user_id, order_status, fulfillment_type
-FROM orders ORDER BY order_id DESC LIMIT 10;
-SELECT order_id, user_id, item_id, quantity, unit_price_snapshot
-FROM order_items ORDER BY order_id DESC, user_id, item_id LIMIT 20;
-```
-
-Repeat a SELECT after adding, editing or removing food on the website. Results are a snapshot and do not refresh automatically. For one order, replace the example ID with the ID shown on its page:
-
-```sql
-SELECT * FROM order_items WHERE order_id = 94102;
-```
-
-Exit with `exit;`, `quit;` or Ctrl+D. This closes the client without stopping MySQL or deleting any data.
-
-### Verification
-
-On Linux, macOS, WSL or Windows, activate the virtual environment using the appropriate command above. With MySQL running and `.env` configured:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Manual acceptance: use Alice in a normal browser and Bob in a private window; create and join a group, add/change/remove items, refresh both windows, leave, and cancel. Open a seeded expired group to confirm it is read-only. Check delivery remainder examples 94102/94103 and zero-fee configuration. Then ask another member to repeat the first setup on a fresh database.
-
-The integration suite creates a randomly named `group_eats_test_*` database, imports the actual schema/seed, and drops that test database afterwards. It never clears the configured application database. The test account needs CREATE/DROP DATABASE privileges. All 26 integration tests passed on MySQL 8.4.7. Two independent Chromium sessions also passed the create/join/add/update/remove/leave/cancel workflow, persistence and mobile layout checks. Tests cover CRUD persistence, sessions/CSRF, member isolation, price snapshots, concurrent joins, cancellation, deadlines/timezones, zero/pickup fees, remainder allocation, transaction rollback creation-timestamp migration, non-destructive/concurrent coupon upgrades, concurrent voucher use and post-deadline coupon removal.
-
-Frontend changes should also be exercised with Alice/Bob in separate browser contexts. Confirm database changes after adding, editing and removing items, then verify that a nonmember cannot edit and an expired/cancelled group is read-only. These checks are preparation for group acceptance, not a claim that the course presentation or video is complete.
-
-## Repository Structure
+## Repository structure
 
 ```text
-ER/                         ER diagrams and editable draw.io files
-ER_Diagram_Details*.md       Business design revisions
-Instruction/                Course requirements and references
-db/schema.sql               Creation script: 18 tables and 2 views
-db/setup.sh                 Reproducible database creation and schema import
-db/seed.sql                 Repeatable test data for the database tables
-db/seed.sh                  One-command test data import
-backend/                    Flask API, parameterized SQL and database management
-app.py                      Same-origin application entry point
-requirements.txt            Python dependencies
-.env.example                Local connection/configuration template
-tests/test_api.py           Real MySQL integration tests
-docs/                       Shared API contract in English and Chinese
-frontend/                   Database-backed frontend and local assets
-README.md                   English project guide (default)
-README.zh-CN.md             Simplified Chinese project guide
+ER/                 ER03 diagram and draw.io source
+db/schema.sql       18 tables and 2 views
+db/seed.sql         162 seed records
+db/setup.sh         Optional schema import
+db/seed.sh          Optional seed import
+backend/            Flask API and SQL
+app.py              Application entry point
+requirements.txt    Python dependencies
+.env.example        Connection template (copy to .env; do not commit .env)
+tests/              MySQL integration tests
+frontend/           Web UI and local images
+docs/               API contract
 ```
 
-The frontend uses the real API; no live operation silently falls back to mock data. Complete the independent group acceptance run and presentation/video preparation before submission.
+## Existing databases
 
-Order submission: the host can select Place group order at any time once items have been added to transition Pending to Confirmed. Repeated submission is idempotent; confirmed orders are read-only. No online payment or real dispatch occurs. A 1-minute deadline is available. For an existing database, `python -m backend.manage refresh-labels` updates reserved fixture names/emails without changing orders, prices or passwords; do not reseed just to rename fixtures.
+If the database already has the current tables, do not run `init`. Use:
 
-The account menu opens Orders, with All orders, Group orders and Individual orders tabs. Individual orders support creation, own-item CRUD, immediate placement and cancellation before placement; confirmed orders have private, read-only receipts. Buyers without solo orders see an empty state. Login email starts blank with a generic Email address placeholder.
+```bash
+python -m backend.manage seed
+```
 
-Individual ordering: open a store → Order for myself → choose delivery/pickup → add or edit food → Place order. Individual orders can be placed immediately; group hosts can also place early when everyone is ready. Orders tabs show counts and only the signed-in buyer’s records.
+to refresh seed rows and demo passwords, or `python -m backend.manage demo-accounts` to update only Alice and Bob. Do not reseed during a live demonstration.
 
-Deadline limits joining and item changes, not when submission may begin. A host may place a nonempty Pending group before or after it. Submission sets the existing order_status to Confirmed, which immediately blocks all membership/item changes. Early placement itself needs no separate lock field; simulated completion adds the three timestamps documented below. The deadline-only group_status view can still read open for an early-Confirmed order, so permission checks must always include order_status. A host may remove a coupon from a Pending group even after its deadline, review the updated total, then explicitly place the order. Adding/replacing coupons and editing items still require an open group.
+If the database was created from an earlier schema, run once:
 
-## Order lifecycle and simulated completion
+```bash
+python -m backend.manage migrate
+```
 
-- Pending: a draft. Individuals can edit; group membership/items can change only before the deadline. The owner/host can place a nonempty order; groups do not have to wait for the deadline.
-- Confirmed: submitted and read-only. Placement atomically records placed_at and a random completion_due_at 15–60 minutes later. Retries preserve the original schedule.
-- Completed: the background worker records completed_at when due; associated deliveries become Delivered. Pickup has no delivery record.
-- Cancelled: cancelled before submission, retained in history and excluded from completion. Seeded In Progress orders are historical and are not advanced by this simulation.
-
-For existing databases, run `python -m backend.manage migrate` once before starting the updated app; it is repeatable, renames the creation timestamp to `created_at`, and adds three completion timestamps/index without resetting orders or passwords. New init already includes them. Historical Confirmed orders without a due timestamp are not automatically backfilled; new submissions (or a re-confirmation that creates a missing schedule) are scheduled.
-
-`python app.py` starts a background check every 5 seconds, independent of page visits. Downtime pauses processing; startup catches up overdue jobs without choosing a new ETA. UI polling is every 15 seconds, so visible status may lag slightly. With another WSGI runner, run `python -m backend.completion` separately. This is simulated completion, not real dispatch or payment.
-
-Local development now reloads Python changes by default (APP_RELOAD=1), with the interactive debugger disabled. An already-running old process still requires one restart. Add food before placing appears only when there are actually no items; otherwise verify identity, lifecycle and backend version.
+That command renames the creation timestamp to `created_at`, adds completion columns, and inserts missing demo coupons `ALICE10` and `BOB5` if they are absent. Existing coupons, orders, and passwords are kept. Repeating `migrate` does not create duplicate vouchers.
