@@ -110,36 +110,11 @@ The UI reads the 4 seeded sellers and 9 items. Images are local files, not datab
 
 After the app is running, open **http://127.0.0.1:5000/showcase/live** (use the same port as `python app.py`).
 
-The page embeds the website, shows the matching SQL, and polls live MySQL rows every two seconds. Sign in as Alice in the embedded site and create a group. Open the invite as Bob in a private window. Step buttons change guidance only; they do not write to the database. **Copy SQL** and **Workbench SQL** export the SELECT statements for Workbench.
+The page embeds the website, shows the matching SQL, and polls live MySQL rows every two seconds. Sign in as Alice in the embedded site and create a group. Open the invite as Bob in a private window. Step buttons change guidance only; they do not write to the database.
 
 Snapshots require a buyer login. Group tables require membership. The showcase does not run arbitrary SQL and does not expose password hashes.
 
-## 5. Inspect the data in Workbench
-
-Result grids do not refresh by themselves. Run the SELECT again after each page action.
-
-Connect to `127.0.0.1:3306` with the same user, password, and database as `.env`.
-
-```sql
-SELECT DATABASE();
-SHOW TABLES;
-SELECT order_id, host_user_id, order_status, coupon_id
-FROM orders
-WHERE host_user_id = 90001
-ORDER BY order_id DESC
-LIMIT 10;
-SELECT buyer_user_id, seller_user_id, saved_time
-FROM favorite_sellers
-WHERE buyer_user_id = 90001;
-```
-
-Alice is `user_id` `90001`. Command-line equivalent:
-
-```bash
-mysql -h 127.0.0.1 -P 3306 -u root -p group_eats
-```
-
-## 6. Tests
+## 5. Tests
 
 ```bash
 python -m unittest discover -s tests -v
