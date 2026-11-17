@@ -4,12 +4,15 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from unittest.mock import patch
 
 import pymysql
 from pymysql.constants import CLIENT
 from backend.app import create_app
-from backend.manage import import_sql, prepare_demo_accounts, migrate_created_at, DEMO_PASSWORD
+from backend.manage import import_sql, prepare_demo_accounts, migrate_created_at, ensure_demo_coupons, DEMO_PASSWORD
 from backend.completion import complete_due_orders
+from backend.db import connect
 
 
 class APIIntegration(unittest.TestCase):
@@ -366,6 +369,140 @@ class APIIntegration(unittest.TestCase):
         self.assertEqual(self.sql('SELECT * FROM deliveries WHERE order_id=%s',(oid,)),[])
         self.assertEqual(self.sql('SELECT order_status FROM orders WHERE order_id=94007')[0]['order_status'],'Cancelled')
         self.assertEqual(self.sql('SELECT order_status FROM orders WHERE order_id=94104')[0]['order_status'],'Confirmed')
+
+    def test_demo_coupon_upgrade_preserves_existing_records(self):
+        self.sql('DELETE FROM coupons WHERE coupon_id IN (93006,93007)')
+        self.sql('''INSERT INTO coupons VALUES
+            (93006,90003,'LOYALTY25',25,0,'2099-12-31 23:59:59'),
+            (93007,90004,'DINNER20',20,10,'2099-12-31 23:59:59')''')
+        self.sql('UPDATE orders SET coupon_id=93006 WHERE order_id=94001')
+        old_coupons = self.sql('SELECT * FROM coupons ORDER BY coupon_id')
+        old_orders = self.sql('SELECT * FROM orders ORDER BY order_id')
+        ensure_demo_coupons(self.connection)
+        rows = self.sql('SELECT * FROM coupons ORDER BY coupon_id')
+        self.assertEqual([r for r in rows if r['coupon_id'] <= 93007], old_coupons)
+        added = [r for r in rows if r['coupon_id'] > 93007]
+        self.assertEqual({(r['buyer_user_id'],r['coupon_code']) for r in added},
+                         {(90001,'ALICE10'),(90002,'BOB5')})
+        self.assertEqual(self.sql('SELECT * FROM orders ORDER BY order_id'), old_orders)
+        # An existing voucher may already be used or have different terms.
+        aid = next(r['coupon_id'] for r in added if r['buyer_user_id'] == 90001)
+        self.sql('''UPDATE coupons SET discount_value=17,minimum_spend_threshold=75,
+            expiry_date='2000-01-01 00:00:00' WHERE coupon_id=%s''', (aid,))
+        self.sql('UPDATE orders SET coupon_id=%s WHERE order_id=94002', (aid,))
+        before_coupons = self.sql('SELECT * FROM coupons ORDER BY coupon_id')
+        before_orders = self.sql('SELECT * FROM orders ORDER BY order_id')
+        ensure_demo_coupons(self.connection)
+        ensure_demo_coupons(self.connection)
+        self.assertEqual(self.sql('SELECT * FROM coupons ORDER BY coupon_id'), before_coupons)
+        self.assertEqual(self.sql('SELECT * FROM orders ORDER BY order_id'), before_orders)
+
+    def test_concurrent_demo_coupon_upgrades_do_not_duplicate_vouchers(self):
+        self.sql('DELETE FROM coupons WHERE coupon_id IN (93006,93007)')
+        barrier = Barrier(2)
+        def upgrade(_):
+            connection = connect(self.app.config)
+            try:
+                barrier.wait(timeout=10)
+                ensure_demo_coupons(connection)
+            finally:
+                connection.close()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(upgrade, range(2)))
+        vouchers = self.sql("SELECT buyer_user_id,coupon_code FROM coupons WHERE coupon_code IN ('ALICE10','BOB5')")
+        self.assertEqual(sorted((r['buyer_user_id'],r['coupon_code']) for r in vouchers),
+                         [(90001,'ALICE10'),(90002,'BOB5')])
+
+    def test_concurrent_coupon_use_returns_one_success_and_one_used_error(self):
+        other, token = self.login('alice')
+        for index, kinds in enumerate((('individual','individual'),('group','group'),('individual','group'))):
+            with self.subTest(kinds=kinds):
+                code = f'RACE{index}'
+                self.sql('''INSERT INTO coupons(buyer_user_id,coupon_code,discount_value,
+                    minimum_spend_threshold,expiry_date) VALUES(90001,%s,10,30,'2099-12-31 23:59:59')''', (code,))
+                paths = []
+                for kind, seller, item in zip(kinds,(90101,90103),(92001,92005)):
+                    # Different sellers avoid serializing on the same seller's
+                    # row, so the requests really compete for the coupon.
+                    path = '/orders' if kind == 'individual' else '/group-orders'
+                    data = {'seller_user_id':seller,'fulfillment_type':'Self-Pickup'}
+                    if kind == 'group':
+                        data['deadline'] = '2099-12-31T23:59:59+08:00'
+                    response = self.write(self.a,self.ta,path,data=data)
+                    self.assertEqual(response.status_code,201,response.json)
+                    path += f"/{response.json['data']['order_id']}"
+                    self.assertEqual(self.write(self.a,self.ta,path+f'/items/{item}','PUT',{'quantity':1}).status_code,200)
+                    paths.append(path)
+                barrier = Barrier(2)
+                def apply(index):
+                    client, csrf = (self.a,self.ta) if index == 0 else (other,token)
+                    barrier.wait(timeout=10)
+                    return self.write(client,csrf,paths[index]+'/coupon','PUT',{'coupon_code':code})
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    results = list(pool.map(apply,range(2)))
+                self.assertEqual(sorted(r.status_code for r in results),[200,409], [r.json for r in results])
+                winner = next(i for i,r in enumerate(results) if r.status_code == 200)
+                loser = results[1-winner]
+                self.assertEqual(loser.json['error']['code'],'COUPON_USED')
+                assigned = self.sql('''SELECT o.order_id FROM orders o JOIN coupons c
+                    ON c.coupon_id=o.coupon_id WHERE c.coupon_code=%s''', (code,))
+                self.assertEqual([r['order_id'] for r in assigned],[int(paths[winner].split('/')[-1])])
+                self.assertEqual(self.write(self.a,self.ta,paths[winner]+'/coupon','PUT',{'coupon_code':code}).status_code,200)
+                self.assertEqual(self.write(self.a,self.ta,paths[winner]+'/place').status_code,200)
+
+    def test_coupon_unique_conflict_is_not_a_server_error(self):
+        response = self.write(self.a,self.ta,'/orders',data={'seller_user_id':90101,'fulfillment_type':'Self-Pickup'})
+        path = f"/orders/{response.json['data']['order_id']}"
+        self.write(self.a,self.ta,path+'/items/92001','PUT',{'quantity':1})
+        from backend.app import execute as real_execute
+        def conflict(sql, args=()):
+            if sql.startswith('UPDATE orders SET coupon_id='):
+                raise pymysql.IntegrityError(1062,"Duplicate entry for key 'orders.coupon_id'")
+            return real_execute(sql,args)
+        with patch('backend.app.execute',side_effect=conflict):
+            response = self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'})
+        self.assertEqual(response.status_code,409,response.json)
+        self.assertEqual(response.json['error']['code'],'COUPON_USED')
+        self.assertIsNone(self.a.get('/api/v1'+path).json['data']['coupon_id'])
+
+    def test_host_can_remove_invalid_coupon_after_group_deadline(self):
+        for reason in ('minimum','expired'):
+            with self.subTest(reason=reason):
+                oid = self.create()
+                path = f'/group-orders/{oid}'
+                self.write(self.b,self.tb,path+'/members/me','PUT')
+                self.write(self.a,self.ta,path+'/items/92001','PUT',{'quantity':1})
+                self.assertEqual(self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'}).status_code,200)
+                if reason == 'minimum':
+                    self.write(self.a,self.ta,path+'/items/92001','DELETE')
+                    self.write(self.a,self.ta,path+'/items/92002','PUT',{'quantity':1})
+                else:
+                    self.sql('UPDATE coupons SET expiry_date=NOW()-INTERVAL 1 SECOND WHERE coupon_id=93006')
+                self.sql('UPDATE group_orders SET deadline=NOW()-INTERVAL 1 SECOND WHERE order_id=%s',(oid,))
+                failed = self.write(self.a,self.ta,path+'/place')
+                self.assertEqual(failed.status_code,409,failed.json)
+                self.assertEqual(failed.json['error']['code'], 'COUPON_MIN_SPEND' if reason == 'minimum' else 'COUPON_EXPIRED')
+                detail = self.a.get('/api/v1'+path).json['data']
+                self.assertTrue(detail['can_remove_coupon'])
+                self.assertFalse(detail['can_apply_coupon'])
+                self.assertEqual(self.write(self.b,self.tb,path+'/coupon','DELETE').status_code,403)
+                self.assertEqual(self.write(self.a,self.ta,path+'/coupon','PUT',{'coupon_code':'ALICE10'}).status_code,409)
+                self.assertEqual(self.write(self.a,self.ta,path+'/items/92002','PUT',{'quantity':2}).status_code,409)
+                removed = self.write(self.a,self.ta,path+'/coupon','DELETE')
+                self.assertEqual(removed.status_code,200,removed.json)
+                self.assertFalse(removed.json['data']['coupon_applied'])
+                self.assertFalse(removed.json['data']['can_remove_coupon'])
+                host_before = next(m for m in detail['members'] if m['is_host'])
+                host_after = next(m for m in removed.json['data']['members'] if m['is_host'])
+                self.assertEqual(host_after['total_cents'],host_before['total_cents']+detail['discount_cents'])
+                self.assertEqual(self.write(self.a,self.ta,path+'/coupon','DELETE').status_code,200)
+                placed = self.write(self.a,self.ta,path+'/place')
+                self.assertEqual(placed.status_code,200,placed.json)
+                self.assertFalse(placed.json['data']['can_remove_coupon'])
+                self.assertEqual(self.write(self.a,self.ta,path+'/coupon','DELETE').status_code,409)
+        cancelled = self.create()
+        self.write(self.a,self.ta,f'/group-orders/{cancelled}/cancel')
+        self.assertEqual(self.write(self.a,self.ta,f'/group-orders/{cancelled}/coupon','DELETE').status_code,409)
 
     def test_favorites_list_toggle_and_isolation(self):
         saved=self.a.get('/api/v1/favorites').json['data']

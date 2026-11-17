@@ -91,7 +91,7 @@ Public: session, seller list/detail and menu. All group endpoints require a buye
 | PUT | `/orders/{order_id}/coupon` | Body `{coupon_code}`; owner, Pending individual; 200 receipt |
 | DELETE | `/orders/{order_id}/coupon` | Remove coupon; 200 receipt |
 | PUT | `/group-orders/{order_id}/coupon` | Body `{coupon_code}`; host only, Pending and before deadline; discount off food subtotal, subtracted from the host member total; 200 detail |
-| DELETE | `/group-orders/{order_id}/coupon` | Host only; 200 detail |
+| DELETE | `/group-orders/{order_id}/coupon` | Host only, Pending; allowed before/after deadline; idempotent; 200 detail |
 
 Unknown order IDs return 404. For known groups, writes require membership (except joining); closed/non-Pending membership and item mutations fail, even when the desired row already exists/does not exist. Cancelling an already-Cancelled order is the one lifecycle exception. No body may choose the caller's identity, price, host, coupon, courier or shipping fee.
 
@@ -117,7 +117,7 @@ host shipping share = base + remainder
 member total = sum(quantity × snapshot cents) + shipping share
 ```
 
-The backend calculates and returns totals for all members. Recalculate after joining/leaving; costs are provisional while open. Sum of member shares must equal the stored delivery fee. An attached coupon sets `coupon_applied: true` and `summary_basis: after_coupons`. Discount is `min(coupon cents, food subtotal)` and, for groups, is taken only from the host’s member total (capped so that total cannot go negative). Other members are unchanged. Placement re-checks ownership, expiry, uniqueness and minimum spend against the current food subtotal; cancelling a Pending order releases the coupon. Unused demo codes: Alice `ALICE10` (min HK$30), Bob `BOB5`. Seeded `94002` uses `WELCOME10`.
+The backend calculates and returns totals for all members. Recalculate after joining/leaving; costs are provisional while open. Sum of member shares must equal the stored delivery fee. An attached coupon sets `coupon_applied: true` and `summary_basis: after_coupons`. Discount is `min(coupon cents, food subtotal)` and, for groups, is taken only from the host’s member total (capped so that total cannot go negative). Other members are unchanged. Placement re-checks ownership, expiry, uniqueness and minimum spend against the current food subtotal; cancelling a Pending order releases the coupon. Coupon detail permissions include `can_remove_coupon`, independent of `can_apply_coupon`: a Pending group host may remove a voucher after the deadline, review the new total, and explicitly submit again. Concurrent attempts to attach the same voucher serialize on its row; the losing request receives 409 `COUPON_USED`, including unique-constraint conflicts. Unused demo codes: Alice `ALICE10` (min HK$30), Bob `BOB5`. Seeded `94002` uses `WELCOME10`.
 
 | Seed order | Members | Shipping cents | Nonhost share | Host share |
 |---|---:|---:|---:|---:|
@@ -158,6 +158,7 @@ The zero-fee seed is a solo order, not a group. To exercise this through the pha
     "can_cancel": true,
     "can_place": true,
     "can_apply_coupon": true,
+    "can_remove_coupon": false,
     "members": [
       {"buyer_user_id":90002,"username":"Bob Chan","is_host":true,"item_subtotal_cents":6800,"shipping_share_cents":334,"discount_cents":0,"total_cents":7134},
       {"buyer_user_id":90003,"username":"Carol Lee","is_host":false,"item_subtotal_cents":2200,"shipping_share_cents":333,"discount_cents":0,"total_cents":2533},

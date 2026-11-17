@@ -93,7 +93,7 @@ function timingNote(o) {
 }
 function couponControls(order, kind) {
   if (order.coupon_applied) {
-    return `<div class="coupon-box"><p><span>Coupon ${esc(order.coupon_code)}</span><b>−${money(order.discount_cents)}</b></p>${order.can_apply_coupon?`<button class="text-button" data-action="${kind}-coupon-remove">Remove coupon</button>`:''}</div>`;
+    return `<div class="coupon-box"><p><span>Coupon ${esc(order.coupon_code)}</span><b>−${money(order.discount_cents)}</b></p>${order.can_remove_coupon?`<button class="text-button" data-action="${kind}-coupon-remove">Remove coupon</button>`:''}</div>`;
   }
   if (!order.can_apply_coupon) return '';
   const usable = myCoupons.filter(c => c.usable);

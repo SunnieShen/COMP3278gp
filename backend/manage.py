@@ -40,21 +40,24 @@ def migrate_created_at(connection):
 
 
 def ensure_demo_coupons(connection):
-    """Unused demo coupons so Alice/Bob can apply a voucher on a new order."""
+    """Add missing demo vouchers without editing existing coupons or their IDs."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            '''INSERT INTO coupons
-               (coupon_id, buyer_user_id, coupon_code, discount_value, minimum_spend_threshold, expiry_date)
-               VALUES
-               (93006, 90001, 'ALICE10', 10.00, 30.00, '2099-12-31 23:59:59'),
-               (93007, 90002, 'BOB5', 5.00, 0.00, '2099-12-31 23:59:59')
-               ON DUPLICATE KEY UPDATE
-                 buyer_user_id = VALUES(buyer_user_id),
-                 coupon_code = VALUES(coupon_code),
-                 discount_value = VALUES(discount_value),
-                 minimum_spend_threshold = VALUES(minimum_spend_threshold),
-                 expiry_date = VALUES(expiry_date)'''
-        )
+        for buyer_id, code, discount, minimum in (
+            (90001, 'ALICE10', '10.00', '30.00'),
+            (90002, 'BOB5', '5.00', '0.00'),
+        ):
+            # Serialize repeat/concurrent upgrades for each buyer, including when
+            # the coupon does not yet exist. Coupon codes are not unique in SQL.
+            cursor.execute('SELECT user_id FROM buyers WHERE user_id=%s FOR UPDATE', (buyer_id,))
+            if not cursor.fetchone():
+                continue
+            cursor.execute('''SELECT coupon_id FROM coupons
+                WHERE buyer_user_id=%s AND coupon_code=%s LIMIT 1 FOR UPDATE''', (buyer_id, code))
+            if cursor.fetchone():
+                continue
+            cursor.execute('''INSERT INTO coupons
+                (buyer_user_id,coupon_code,discount_value,minimum_spend_threshold,expiry_date)
+                VALUES(%s,%s,%s,%s,'2099-12-31 23:59:59')''', (buyer_id, code, discount, minimum))
     connection.commit()
 
 
@@ -107,7 +110,7 @@ def main():
             prepare_demo_accounts(connection)
         print(f'{args.command} completed for {name}.')
         if args.command == 'migrate':
-            print('created_at, completion columns and unused demo coupons (ALICE10/BOB5) are ready. Existing data/passwords preserved.')
+            print('created_at and completion columns are ready; missing demo coupons added. Existing coupons/data/passwords preserved.')
         elif args.command == 'refresh-labels':
             print('Reserved display labels refreshed; existing passwords and orders preserved.')
         else:

@@ -153,6 +153,7 @@ def group_detail(order_id):
                    currency='HKD', shipping_fee_cents=fee, can_edit=open_order,
                    can_leave=open_order and not is_host, can_cancel=open_order and is_host,
                    can_apply_coupon=open_order and is_host,
+                   can_remove_coupon=record['order_status'] == 'Pending' and is_host and record['coupon_id'] is not None,
                    members=members, items=lines, **coupon)
     preview.update(timing_fields(record))
     preview['can_place'] = is_host and record['order_status'] == 'Pending' and bool(lines)
@@ -183,7 +184,8 @@ def individual_detail(order_id):
         items=lines, item_subtotal_cents=food_cents,
         shipping_fee_cents=cents(delivery['shipping_fee']) if record['fulfillment_type']=='Delivery' else 0,
         can_edit=record['order_status']=='Pending', can_cancel=record['order_status']=='Pending',
-        can_apply_coupon=record['order_status']=='Pending', **coupon)
+        can_apply_coupon=record['order_status']=='Pending',
+        can_remove_coupon=record['order_status']=='Pending' and record['coupon_id'] is not None, **coupon)
     record['total_cents'] = record['item_subtotal_cents'] + record['shipping_fee_cents'] - record['discount_cents']
     record.update(timing_fields(record))
     record['can_place'] = record['can_edit'] and bool(lines)
@@ -279,10 +281,19 @@ def validate_coupon(coupon, owner_id, food_cents, order_id=None):
 def attach_coupon(record, coupon_code):
     if not isinstance(coupon_code, str) or not coupon_code.strip():
         fail(400, 'VALIDATION_ERROR', 'Enter a coupon code.')
-    coupon = query('SELECT * FROM coupons WHERE buyer_user_id=%s AND coupon_code=%s',
+    # Lock the voucher before checking usage. Competing orders then observe
+    # the winner's committed assignment instead of both treating it as unused.
+    coupon = query('SELECT * FROM coupons WHERE buyer_user_id=%s AND coupon_code=%s FOR UPDATE',
                    (g.user['user_id'], coupon_code.strip()), one=True)
     validate_coupon(coupon, g.user['user_id'], food_subtotal_cents(record['order_id']), record['order_id'])
-    execute('UPDATE orders SET coupon_id=%s WHERE order_id=%s', (coupon['coupon_id'], record['order_id']))
+    try:
+        execute('UPDATE orders SET coupon_id=%s WHERE order_id=%s', (coupon['coupon_id'], record['order_id']))
+    except pymysql.IntegrityError as error:
+        # This UPDATE changes only coupon_id, whose unique constraint remains
+        # the final guard against assignments from other writers.
+        if error.args[0] == 1062:
+            fail(409, 'COUPON_USED', 'This coupon has already been used.')
+        raise
 
 
 def clear_coupon(order_id):
@@ -719,12 +730,15 @@ def create_app(config=None):
     def group_coupon(order_id):
         with transaction():
             record = group_record(order_id, lock=True)
-            editable(record)
             if record['host_user_id'] != g.user['user_id']:
-                fail(403, 'HOST_ONLY', 'Only the host can apply a coupon.')
+                fail(403, 'HOST_ONLY', 'Only the host can change a coupon.')
             if request.method == 'PUT':
+                editable(record)
                 attach_coupon(record, body(('coupon_code',))['coupon_code'])
             else:
+                # A locked draft may have an expired/ineligible coupon. Let its
+                # host remove it and explicitly confirm the revised total.
+                editable_individual(record)
                 if request.content_length:
                     body()
                 clear_coupon(order_id)

@@ -44,6 +44,8 @@ Open http://127.0.0.1:5000. `init` creates the schema, imports the existing 162 
 | Alice | alice@example.com | DemoPass3278! |
 | Bob | bob@example.com | DemoPass3278! |
 
+`migrate` adds missing demo coupons using generated IDs, preserving existing vouchers, their terms and order links; repeating it does not issue duplicates.
+
 For an existing ER03 database, first run `python -m backend.manage migrate` to rename the creation timestamp to `created_at` and add completion timestamps/index without resetting data. For a database already using the current schema, run `python -m backend.manage seed` to upsert fixtures and prepare these accounts, or `python -m backend.manage demo-accounts` to change only the two demo password hashes. Reseeding restores fixture values, so do not do it during a demo. If the database uses the old orders.buyer_user_id column, first apply the documented migration below. The original shell import scripts remain available; importing raw seed.sql restores placeholder passwords until demo-accounts is run.
 
 Create a group from a seller's menu. Open its copied invite link in another browser profile/private window, log in as the other buyer, join, and add/change/remove your own items. Two ordinary tabs share a session. Group details refresh every 15 seconds and have a manual Refresh button.
@@ -251,7 +253,7 @@ python -m unittest discover -s tests -v
 
 Manual acceptance: use Alice in a normal browser and Bob in a private window; create and join a group, add/change/remove items, refresh both windows, leave, and cancel. Open a seeded expired group to confirm it is read-only. Check delivery remainder examples 94102/94103 and zero-fee configuration. Then ask another member to repeat the first setup on a fresh database.
 
-The integration suite creates a randomly named `group_eats_test_*` database, imports the actual schema/seed, and drops that test database afterwards. It never clears the configured application database. The test account needs CREATE/DROP DATABASE privileges. All 19 integration tests passed on MySQL 8.4.7. Two independent Chromium sessions also passed the create/join/add/update/remove/leave/cancel workflow, persistence and mobile layout checks. Tests cover CRUD persistence, sessions/CSRF, member isolation, price snapshots, concurrent joins, cancellation, deadlines/timezones, zero/pickup fees, remainder allocation transaction rollback and creation-timestamp migration.
+The integration suite creates a randomly named `group_eats_test_*` database, imports the actual schema/seed, and drops that test database afterwards. It never clears the configured application database. The test account needs CREATE/DROP DATABASE privileges. All 26 integration tests passed on MySQL 8.4.7. Two independent Chromium sessions also passed the create/join/add/update/remove/leave/cancel workflow, persistence and mobile layout checks. Tests cover CRUD persistence, sessions/CSRF, member isolation, price snapshots, concurrent joins, cancellation, deadlines/timezones, zero/pickup fees, remainder allocation, transaction rollback creation-timestamp migration, non-destructive/concurrent coupon upgrades, concurrent voucher use and post-deadline coupon removal.
 
 Frontend changes should also be exercised with Alice/Bob in separate browser contexts. Confirm database changes after adding, editing and removing items, then verify that a nonmember cannot edit and an expired/cancelled group is read-only. These checks are preparation for group acceptance, not a claim that the course presentation or video is complete.
 
@@ -284,7 +286,7 @@ The account menu opens Orders, with All orders, Group orders and Individual orde
 
 Individual ordering: open a store → Order for myself → choose delivery/pickup → add or edit food → Place order. Individual orders can be placed immediately; group hosts can also place early when everyone is ready. Orders tabs show counts and only the signed-in buyer’s records.
 
-Deadline limits joining and item changes, not when submission may begin. A host may place a nonempty Pending group before or after it. Submission sets the existing order_status to Confirmed, which immediately blocks all membership/item changes. Early placement itself needs no separate lock field; simulated completion adds the three timestamps documented below. The deadline-only group_status view can still read open for an early-Confirmed order, so permission checks must always include order_status.
+Deadline limits joining and item changes, not when submission may begin. A host may place a nonempty Pending group before or after it. Submission sets the existing order_status to Confirmed, which immediately blocks all membership/item changes. Early placement itself needs no separate lock field; simulated completion adds the three timestamps documented below. The deadline-only group_status view can still read open for an early-Confirmed order, so permission checks must always include order_status. A host may remove a coupon from a Pending group even after its deadline, review the updated total, then explicitly place the order. Adding/replacing coupons and editing items still require an open group.
 
 ## Order lifecycle and simulated completion
 

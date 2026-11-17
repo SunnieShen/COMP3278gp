@@ -91,7 +91,7 @@ session、商家和菜单查询公开；所有拼单接口要求买家登录。�
 | PUT | `/orders/{order_id}/coupon` | `{coupon_code}`；个人单拥有者、Pending；200 收据 |
 | DELETE | `/orders/{order_id}/coupon` | 移除优惠券；200 收据 |
 | PUT | `/group-orders/{order_id}/coupon` | `{coupon_code}`；仅 host，Pending 且截止前；折扣按餐费计算，只从 host 应付中扣除；200 详情 |
-| DELETE | `/group-orders/{order_id}/coupon` | 仅 host；200 详情 |
+| DELETE | `/group-orders/{order_id}/coupon` | 仅 host、Pending；截止前后均可移除，可重复调用；200 详情 |
 
 不存在的订单返回 404。除了加入操作外，写入要求当前用户是成员。对已截止或非 Pending 的拼单，即使目标行已存在或已删除，也拒绝成员／菜品修改；重复取消已取消订单是例外。请求不能指定操作人、host、价格、优惠券、骑手或运费。
 
@@ -138,7 +138,7 @@ host 90002 查询 `GET /group-orders/94102` 的完整 JSON 示例见 [英文版�
 | 90003 Carol | 2200 | 333 | 2533 |
 | 90004 David | 6800 | 333 | 7133 |
 
-详情包括 order_id、host_user_id、seller_user_id、seller_name、created_at、deadline、server_time、order_status、group_status、fulfillment_type、coupon_id、coupon_code、currency、coupon_applied、discount_cents、summary_basis、shipping_fee_cents、权限字段（含 can_apply_coupon）、members 和 items。currency 为 HKD；无券时 summary_basis 为 before_coupons。
+详情包括 order_id、host_user_id、seller_user_id、seller_name、created_at、deadline、server_time、order_status、group_status、fulfillment_type、coupon_id、coupon_code、currency、coupon_applied、discount_cents、summary_basis、shipping_fee_cents、权限字段（含 can_apply_coupon、can_remove_coupon）、members 和 items。currency 为 HKD；无券时 summary_basis 为 before_coupons。
 
 members 按 buyer_user_id 排序，含 username、is_host、item_subtotal_cents、shipping_share_cents、total_cents；items 按 user_id、item_id 排序，含 order_id、user_id、item_id、item_name、quantity、unit_price_snapshot_cents、line_total_cents。列表按 order_id 倒序，使用预览字段并增加 is_member、is_host，不包含所有人的菜品。
 
@@ -174,3 +174,5 @@ Deadline 是加入和改菜的时间上限，不是最早提交时间。Host 可
 本地开发默认自动重载 Python 代码（APP_RELOAD=1），不启用交互式调试器。首次升级仍需重启旧进程。界面里的 Add food before placing 只在确实没有菜品时显示，已加菜却不能提交应检查登录身份、订单状态及后端版本。
 
 订单列表、详情和提交响应增加 placed_at、completion_due_at、completed_at，均为可空的香港 ISO 时间。新草稿为 null，提交后保存计划。这是运行记录字段，不增加实体。
+
+优惠券移除权限 `can_remove_coupon` 与加券权限分开。Pending 拼单截止后，host 可移除券、核对新金额后再次明确提交；截止后仍不能加券、换券或改菜。并发使用同一张券时按券记录串行检查，未成功的一笔返回 409 `COUPON_USED`，唯一约束冲突也使用该提示。
