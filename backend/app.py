@@ -757,6 +757,9 @@ def create_app(config=None):
                 execute("UPDATE orders SET order_status='Cancelled', coupon_id=NULL WHERE order_id=%s", (order_id,))
         return jsonify(data=group_detail(order_id))
 
+    from .showcase import blueprint as showcase_blueprint
+    app.register_blueprint(showcase_blueprint)
+
     @app.get('/')
     def index():
         return send_from_directory(ROOT / 'frontend', 'index.html')
