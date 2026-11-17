@@ -2,13 +2,8 @@
 
 Food photographs hosted by Unsplash, downloaded for this student prototype.
 
-- hero.jpg: https://images.unsplash.com/photo-1512621776951-a57141f2eefd
 - bao.jpg: https://images.unsplash.com/photo-1563245372-f21724e3856d
-- pasta.jpg: https://images.unsplash.com/photo-1473093295043-cdd812d0e601
 - salad.jpg: https://images.unsplash.com/photo-1512621776951-a57141f2eefd
-- burger.jpg: https://images.unsplash.com/photo-1568901346375-23c9450c58cd
-- sushi.jpg: https://images.unsplash.com/photo-1579871494447-9811cf80d66c
-- pizza.jpg: https://images.unsplash.com/photo-1513104890138-7c749659a591
 
 ## Additional assets
 
@@ -18,7 +13,6 @@ Food photographs hosted by Unsplash, downloaded for this student prototype.
 - coffee.jpg: https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=85
 - dessert.jpg: https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=900&q=85
 - groceries.jpg: https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=85
-- foodpanda-logo.png: https://www.foodpanda.com/wp-content/uploads/2024/05/foodpanda-logo-RGB-horizontal.png
 - Official brand asset source: https://www.foodpanda.com/foodpanda-logos/
 
 ## foodpanda panda mark

@@ -22,7 +22,7 @@
 --   menu_items(item_id PK, seller_user_id FK->sellers, item_name, price, availability_status) -- OFFERS 1:N
 --   coupons(coupon_id PK, buyer_user_id FK->buyers, coupon_code, discount_value, minimum_spend_threshold, expiry_date) -- OWNS 1:N
 --   orders(order_id PK, host_user_id FK->buyers, seller_user_id FK->sellers,
---          coupon_id UK/FK->coupons, order_timestamp, order_status, fulfillment_type)  -- PLACES / FULFILLS / APPLIES
+--          coupon_id UK/FK->coupons, created_at, order_status, fulfillment_type)  -- PLACES / FULFILLS / APPLIES
 --   solo_orders(order_id PK/FK->orders)                 -- ISA subtype
 --   group_orders(order_id PK/FK->orders, deadline)     -- ISA subtype
 --   group_order_participants(order_id PK/FK->group_orders, buyer_user_id PK/FK->buyers) -- PARTICIPATES M:N
@@ -161,9 +161,13 @@ CREATE TABLE orders (
     host_user_id BIGINT UNSIGNED NOT NULL,
     seller_user_id BIGINT UNSIGNED NOT NULL,
     coupon_id BIGINT UNSIGNED UNIQUE,
-    order_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     order_status VARCHAR(20) NOT NULL,
     fulfillment_type ENUM('Delivery', 'Self-Pickup') NOT NULL,
+    placed_at DATETIME NULL,
+    completion_due_at DATETIME NULL,
+    completed_at DATETIME NULL,
+    INDEX idx_order_completion (order_status, completion_due_at),
     FOREIGN KEY (host_user_id) REFERENCES buyers(user_id),
     FOREIGN KEY (seller_user_id) REFERENCES sellers(user_id),
     FOREIGN KEY (coupon_id) REFERENCES coupons(coupon_id)

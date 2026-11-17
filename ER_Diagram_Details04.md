@@ -25,9 +25,9 @@ The goal of this assignment is to design a rigorous and comprehensive ER diagram
 
 4. **Ordering Options & Group Orders:** 
    All orders are modeled under a single **ORDERS** entity, specialized into **SOLO ORDERS** and **GROUP ORDERS** through a total, disjoint ISA hierarchy.
-   * **ORDERS Entity:** Records a unique `order id`, an `order timestamp`, an `order status`, and a `fulfillment type` (Delivery or Self-Pickup). Every order corresponds to one seller and is placed by one buyer via the `places` relationship.
+   * **ORDERS Entity:** Records a unique `order id`, `created_at` (creation time), an `order status`, `placed_at` (placement time), `completion_due_at` (expected completion time), `completed_at` (actual completion time), and a `fulfillment type` (Delivery or Self-Pickup). Every order corresponds to one seller and is placed by one buyer via the `places` relationship.
    * **SOLO ORDERS:** Regular orders placed by a single buyer for immediate checkout, carrying no additional attributes and unjoinable by others.
-   * **GROUP ORDERS:** Collaborative orders hosted by one buyer, recording a `deadline` and status progressing through `open`, `locked`, and `completed`. The placing buyer acts as the host.
+   * **GROUP ORDERS:** Collaborative orders hosted by one buyer, recording a `deadline` and a derived `group_status` (`open` before the deadline, otherwise `locked`). Members can join and edit items while the order is Pending and open. Placing the order stops further changes. Order progress is recorded in the inherited `order_status`. The placing buyer acts as the host.
    * **Joining Group Orders:** Buyers can join group orders as members via the `participates` relationship, allowing multiple member buyers per group order.
 
 5. **Order Items:** 
@@ -67,8 +67,8 @@ The goal of this assignment is to design a rigorous and comprehensive ER diagram
 
 4. **下单选项与拼单（Ordering Options & Group Orders）：** 
    所有订单统一建模为 **ORDERS 实体**，通过完全且不相交的 ISA 细分为 **SOLO ORDERS（个人单）** 与 **GROUP ORDERS（拼单）**。
-   * 统一定义订单基础属性（ID、时间戳、状态、履约方式），由买家通过 `places` 关系向卖家下单。
-   * 拼单支持截止时间及状态机推进（开放、锁定、完成），并允许其他买家通过 `participates` 作为成员加入。
+   * 统一定义订单基础属性（ID、`created_at` 创建时间、状态、履约方式），另记录 `placed_at`（提交时间）、`completion_due_at`（预计完成时间）、`completed_at`（实际完成时间），由买家通过 `places` 关系向卖家下单。
+   * 拼单的 `group_status` 只按截止时间派生为 open／locked；订单为 Pending 且未截止时可加入和改菜，提交后停止修改。订单进度由继承的 `order_status` 记录。其他买家通过 `participates` 加入。
 
 5. **订单明细（Order Items）：** 
    建模为**独立实体**。记录购买数量与单价快照。其唯一标识由组合键 **[所属订单 + 添加买家 + 菜单项]** 决定，完美支持多人拼单时不同成员独立添加相同菜品而不冲突。
