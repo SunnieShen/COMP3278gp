@@ -56,6 +56,14 @@ The real UI reads the 4 seeded sellers and their 9 items. Images are local prese
 
 [Frontend details](frontend/README.md) · [API contract](docs/API.md) · [中文接口约定](docs/API.zh-CN.md)
 
+## Live three-panel showcase
+
+After starting the app, open http://127.0.0.1:5000/showcase/live . The English dashboard embeds the real website, shows step guidance/SQL examples, and polls real MySQL rows every two seconds. It follows the group ID in the website or accepts a manually selected ID.
+
+Sign in as Alice in the embedded website and create a group. Bob opens its invite in a private browser window, joins, adds food, changes quantity and leaves. Watch the actual rows change. Step buttons change guidance only; they do not execute writes. **Copy SQL** and **Workbench SQL** provide the matching read-only queries for Workbench.
+
+Snapshot endpoints require buyer authentication; group tables and worksheets require membership. Logout/access loss clears displayed records. There is no arbitrary-SQL executor, database password or password-hash exposure. Red deletion notices show previous rows, separately from current query results. The original `showcase/showcase.html` remains a standalone simulated rehearsal page.
+
 ## Task Allocation
 
 | Task | Description | Assigned To |
@@ -253,7 +261,7 @@ python -m unittest discover -s tests -v
 
 Manual acceptance: use Alice in a normal browser and Bob in a private window; create and join a group, add/change/remove items, refresh both windows, leave, and cancel. Open a seeded expired group to confirm it is read-only. Check delivery remainder examples 94102/94103 and zero-fee configuration. Then ask another member to repeat the first setup on a fresh database.
 
-The integration suite creates a randomly named `group_eats_test_*` database, imports the actual schema/seed, and drops that test database afterwards. It never clears the configured application database. The test account needs CREATE/DROP DATABASE privileges. All 26 integration tests passed on MySQL 8.4.7. Two independent Chromium sessions also passed the create/join/add/update/remove/leave/cancel workflow, persistence and mobile layout checks. Tests cover CRUD persistence, sessions/CSRF, member isolation, price snapshots, concurrent joins, cancellation, deadlines/timezones, zero/pickup fees, remainder allocation, transaction rollback creation-timestamp migration, non-destructive/concurrent coupon upgrades, concurrent voucher use and post-deadline coupon removal.
+The integration suite creates a randomly named `group_eats_test_*` database, imports the actual schema/seed, and drops that test database afterwards. It never clears the configured application database. The test account needs CREATE/DROP DATABASE privileges. All 28 integration tests passed on MySQL 8.4.7. Two independent Chromium sessions also passed the create/join/add/update/remove/leave/cancel workflow, persistence and mobile layout checks. Tests cover CRUD persistence, sessions/CSRF, member isolation, price snapshots, concurrent joins, cancellation, deadlines/timezones, zero/pickup fees, remainder allocation, transaction rollback creation-timestamp migration, non-destructive/concurrent coupon upgrades, concurrent voucher use and post-deadline coupon removal.
 
 Frontend changes should also be exercised with Alice/Bob in separate browser contexts. Confirm database changes after adding, editing and removing items, then verify that a nonmember cannot edit and an expired/cancelled group is read-only. These checks are preparation for group acceptance, not a claim that the course presentation or video is complete.
 

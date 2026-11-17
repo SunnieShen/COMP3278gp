@@ -504,6 +504,68 @@ class APIIntegration(unittest.TestCase):
         self.write(self.a,self.ta,f'/group-orders/{cancelled}/cancel')
         self.assertEqual(self.write(self.a,self.ta,f'/group-orders/{cancelled}/coupon','DELETE').status_code,409)
 
+    def test_showcase_is_read_only_and_member_scoped(self):
+        anonymous = self.app.test_client()
+        self.assertEqual(anonymous.get('/showcase/live').status_code,200)
+        self.assertEqual(anonymous.get('/showcase/assets/live.js').status_code,200)
+        self.assertEqual(anonymous.get('/showcase/assets/../.env').status_code,404)
+        for path in ('/showcase/session','/showcase/catalog/90101','/showcase/group-orders/94102',
+                     '/showcase/group-orders/94102/queries.sql'):
+            self.assertEqual(anonymous.get('/api/v1'+path).status_code,401)
+        identity = self.a.get('/api/v1/showcase/session')
+        self.assertEqual(identity.json['data']['user']['user_id'],90001)
+        self.assertNotIn('Set-Cookie',identity.headers)
+        before = self.sql('SELECT * FROM orders ORDER BY order_id')
+        self.assertEqual(self.a.get('/api/v1/showcase/group-orders/94102').status_code,403)
+        self.assertEqual(self.a.get('/api/v1/showcase/group-orders/94102/queries.sql').status_code,403)
+        response = self.b.get('/api/v1/showcase/group-orders/94102')
+        self.assertEqual(response.status_code,200,response.json)
+        snapshot = response.json['data']
+        self.assertEqual(snapshot['source']['engine'],'MySQL')
+        self.assertEqual(snapshot['source']['database'],self.name)
+        tables = {t['name']:t for t in snapshot['tables']}
+        self.assertEqual(set(tables),{'orders','group_orders','group_order_participants','order_items','deliveries'})
+        self.assertEqual(len(tables['group_order_participants']['rows']),3)
+        self.assertEqual(tables['orders']['rows'][0]['order_id'],94102)
+        self.assertEqual(tables['order_items']['rows'][0]['unit_price_snapshot'],'68.00')
+        self.assertNotIn('password',str(snapshot).lower())
+        worksheet = self.b.get('/api/v1/showcase/group-orders/94102/queries.sql')
+        self.assertEqual(worksheet.status_code,200)
+        sql = worksheet.get_data(as_text=True)
+        self.assertIn('WHERE order_id=94102',sql)
+        self.assertNotIn('%s',sql)
+        self.assertIn('attachment;',worksheet.headers['Content-Disposition'])
+        self.assertEqual(self.b.get('/api/v1/showcase/group-orders/94102').headers['Cache-Control'],'no-store')
+        catalog = self.a.get('/api/v1/showcase/catalog/90101').json['data']
+        self.assertEqual(catalog['tables'][0]['name'],'menu_items')
+        self.assertEqual(catalog['tables'][0]['rows'][0]['price'],'68.00')
+        self.assertEqual(self.sql('SELECT * FROM orders ORDER BY order_id'),before)
+
+    def test_showcase_observes_group_crud_and_revokes_access_after_leaving(self):
+        oid=self.create();base=f'/group-orders/{oid}';view=f'/api/v1/showcase/group-orders/{oid}'
+        def rows(name):
+            response=self.a.get(view)
+            self.assertEqual(response.status_code,200,response.json)
+            return next(t['rows'] for t in response.json['data']['tables'] if t['name']==name)
+        self.assertEqual(len(rows('group_order_participants')),1)
+        self.write(self.b,self.tb,base+'/members/me','PUT')
+        self.assertEqual(len(rows('group_order_participants')),2)
+        self.write(self.b,self.tb,base+'/items/92002','PUT',{'quantity':1})
+        self.assertEqual(rows('order_items')[0]['quantity'],1)
+        self.write(self.b,self.tb,base+'/items/92002','PUT',{'quantity':2})
+        self.assertEqual(rows('order_items')[0]['quantity'],2)
+        self.write(self.b,self.tb,base+'/members/me','DELETE')
+        self.assertEqual(rows('order_items'),[])
+        self.assertEqual(len(rows('group_order_participants')),1)
+        self.assertEqual(self.b.get(view).status_code,403)
+        self.assertEqual(self.b.get(view+'/queries.sql').status_code,403)
+        self.write(self.a,self.ta,base+'/items/92001','PUT',{'quantity':1})
+        self.write(self.a,self.ta,base+'/place')
+        order=rows('orders')[0]
+        self.assertEqual(order['order_status'],'Confirmed')
+        self.assertIsNotNone(order['placed_at'])
+        self.assertIsNotNone(order['completion_due_at'])
+
     def test_favorites_list_toggle_and_isolation(self):
         saved=self.a.get('/api/v1/favorites').json['data']
         self.assertEqual([s['seller_user_id'] for s in saved['sellers']],[90102,90101])

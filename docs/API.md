@@ -207,3 +207,12 @@ For existing databases, run `python -m backend.manage migrate` once before start
 Local development now reloads Python changes by default (APP_RELOAD=1), with the interactive debugger disabled. An already-running old process still requires one restart. Add food before placing appears only when there are actually no items; otherwise verify identity, lifecycle and backend version.
 
 Order list/detail and placement responses expose placed_at, completion_due_at and completed_at as nullable Hong Kong ISO timestamps. New orders have null timing fields until submission. These are persisted operational columns, not additional entities.
+
+## Read-only live showcase endpoints
+
+- `GET /showcase/session`: inspect the current buyer without creating a CSRF token or login cookie.
+- `GET /showcase/catalog/{seller_id}`: actual `menu_items` rows and their SELECT.
+- `GET /showcase/group-orders/{id}`: members only; snapshots of orders, group_orders, group_order_participants, order_items and deliveries, plus query time, database name and executed SELECT statements.
+- `GET /showcase/group-orders/{id}/queries.sql`: members only; matching read-only Workbench worksheet download.
+
+All paths use the `/api/v1` prefix and require a buyer session. Related tables are read in one transaction; decimals retain their precision as strings and dates use Hong Kong ISO timestamps. Only fixed parameterized SELECT statements execute. Clients cannot submit SQL, choose arbitrary tables or supply database credentials.

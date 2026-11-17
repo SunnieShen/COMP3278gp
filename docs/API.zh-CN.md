@@ -176,3 +176,12 @@ Deadline 是加入和改菜的时间上限，不是最早提交时间。Host 可
 订单列表、详情和提交响应增加 placed_at、completion_due_at、completed_at，均为可空的香港 ISO 时间。新草稿为 null，提交后保存计划。这是运行记录字段，不增加实体。
 
 优惠券移除权限 `can_remove_coupon` 与加券权限分开。Pending 拼单截止后，host 可移除券、核对新金额后再次明确提交；截止后仍不能加券、换券或改菜。并发使用同一张券时按券记录串行检查，未成功的一笔返回 409 `COUPON_USED`，唯一约束冲突也使用该提示。
+
+## 实时演示只读接口
+
+- `GET /showcase/session`：读取当前买家，不创建 CSRF token 或登录 cookie。
+- `GET /showcase/catalog/{seller_id}`：真实 `menu_items` 查询与字段。
+- `GET /showcase/group-orders/{id}`：仅成员可读，返回 orders、group_orders、group_order_participants、order_items、deliveries，以及查询时间、数据库名称和对应 SELECT。
+- `GET /showcase/group-orders/{id}/queries.sql`：仅成员可下载对应的只读 Workbench 查询。
+
+以上路径使用 `/api/v1` 前缀，均要求买家登录。表快照在一个只读事务中查询，金额以保留小数位的字符串输出，日期使用香港 ISO 时间。只执行服务器固定的参数化 SELECT；不接受任意 SQL、表名或数据库连接凭据。

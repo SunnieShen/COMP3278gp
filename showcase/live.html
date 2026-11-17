@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>foodpanda · Live showcase</title><link rel="stylesheet" href="/showcase/assets/live.css"></head>
+<body>
+<header><div><strong>foodpanda <span>LIVE SHOWCASE</span></strong></div><div class="connection"><i id="led"></i><span id="connection">Waiting for login</span><b id="account">Not signed in</b></div></header>
+<nav id="steps" aria-label="Demo steps"></nav>
+<div class="toolbar"><label>Group order ID <input id="order-id" type="number" min="1" step="1" placeholder="Follow the website" aria-label="Group order ID"></label><button id="track">Track</button><label class="check"><input id="follow" type="checkbox" checked>Follow order</label><label class="check"><input id="auto-guide" type="checkbox" checked>Auto steps</label><button id="refresh">Refresh</button><span id="last-query">Refreshes every 2s</span><div class="spacer"></div><button id="copy">Copy SQL</button><button id="download">Workbench SQL ↓</button></div>
+<main>
+<section class="panel website"><div class="panel-title"><h2>1  Website</h2><div><select id="zoom" aria-label="Website zoom"><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select><a href="/" target="_blank" rel="noopener">Open ↗</a></div></div><div class="address" id="frame-address">Loading website…</div><div class="frame-wrap"><iframe id="website" src="/" title="foodpanda website" allow="clipboard-write"></iframe></div></section>
+<section class="panel guide"><div class="panel-title"><h2>2  SQL</h2><span id="crud">READ</span></div><div class="scroll"><div id="guide"></div><h3>Write SQL example</h3><pre id="write-sql"></pre><h3>Executed SELECT</h3><pre id="read-sql">Sign in to view queries.</pre><details><summary>Demo accounts</summary><p>Alice: alice@example.com<br>Bob: bob@example.com<br>Password: DemoPass3278!</p></details></div></section>
+<section class="panel database"><div class="panel-title"><h2>3  Live MySQL</h2><span id="database-name">Not connected</span></div><div id="notice" role="status">Sign in on the left to view MySQL data.</div><div class="scroll" id="tables"></div></section>
+</main><footer><span></span><div><button id="prev">Previous</button><button id="next">Next</button></div></footer>
+<div id="toast" role="status" aria-live="polite"></div><script type="module" src="/showcase/assets/live.js"></script>
+</body></html>
