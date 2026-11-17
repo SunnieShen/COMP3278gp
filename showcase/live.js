@@ -30,8 +30,17 @@ function choose(id){
  guide();
 }
 async function request(path){
- const r=await fetch(BASE+path,{credentials:'same-origin',cache:'no-store'});
- const payload=await r.json();if(!r.ok)throw Object.assign(new Error(payload.error?.message||'Query failed'),{status:r.status});return payload.data;
+ let r;
+ try{r=await fetch(BASE+path,{credentials:'same-origin',cache:'no-store'});}
+ catch{throw Object.assign(new Error('Server is restarting. Reconnecting…'),{transient:true});}
+ const text=await r.text();
+ let payload=null;
+ try{payload=text?JSON.parse(text):null;}catch{payload=null;}
+ // An empty or non-JSON body happens during a service restart (the port is
+ // briefly served by the OS). Treat it as a transient retry, not a query error.
+ if(!payload||typeof payload!=='object')throw Object.assign(new Error('Empty response. Reconnecting…'),{status:r.status,transient:true});
+ if(!r.ok)throw Object.assign(new Error(payload.error?.message||'Query failed'),{status:r.status});
+ return payload.data;
 }
 function rowKey(t,row){return(keys[t.name]||t.columns).map(k=>String(row[k])).join(':');}
 function changedStep(next){
@@ -89,7 +98,7 @@ async function poll(){
   if($('auto-guide').checked)step=changedStep(data);
   tables(data);previous=data;current=data;guide();
   $('led').className='live';$('connection').textContent='MySQL connected';
- }catch(e){if(e.status===401){userId=null;revision++;$('account').textContent='Not signed in';$('led').className='';$('connection').textContent='Waiting for login';clearData('Sign in on the left to view MySQL data.');return;}$('led').className='error';$('connection').textContent='Query failed';clearData(e.status===403?'Join this group or select an order you belong to.':e.message,true);}
+ }catch(e){if(e.status===401){userId=null;revision++;$('account').textContent='Not signed in';$('led').className='';$('connection').textContent='Waiting for login';clearData('Sign in on the left to view MySQL data.');return;}if(e.transient){$('led').className='';$('connection').textContent=e.message;return;}$('led').className='error';$('connection').textContent='Query failed';clearData(e.status===403?'Join this group or select an order you belong to.':e.message,true);}
  finally{inFlight=false;$('copy').disabled=!current;$('download').disabled=!current?.order_id;}
 }
 $('steps').onclick=e=>{const b=e.target.closest('[data-step]');if(b){step=Number(b.dataset.step);$('auto-guide').checked=false;guide();}};

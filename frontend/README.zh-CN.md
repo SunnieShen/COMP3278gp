@@ -12,7 +12,7 @@ HTML/CSS/JavaScript 界面，由 Flask 同源提供网页，通过 `/api/v1` 读
 python app.py
 ```
 
-打开 http://127.0.0.1:5000。静态服务器或直接打开 index.html 无法提供 API。
+打开 <http://127.0.0.1:5000。静态服务器或直接打开> index.html 无法提供 API。
 
 ## 功能
 
