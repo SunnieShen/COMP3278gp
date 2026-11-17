@@ -19,3 +19,14 @@ git show <commit>:showcase/DEMO_SCRIPT.md
 ```
 
 v1 视频分镜的旁白语速曾核算出镜 5 只有 72 wpm、镜 6 只有 87 wpm，v2 已修正到 99–132 wpm 区间。
+
+---
+
+## 两个页面别弄混
+
+| 页面 | 数据来源 | 能进视频？ |
+|---|---|---|
+| `showcase.html`（本地双击打开） | 硬编码 seed 数据 + JS 状态机 | **不能** |
+| `http://127.0.0.1:5000/showcase/live` | 真实 Flask iframe + 真实 MySQL | **能，正式录制用这个** |
+
+`/showcase/live` 三栏一屏：左栏真实应用、中栏后端实际执行的 SELECT、右栏每 2 秒拉一次真实表行，勾上 **Follow order** 后自动跟随左栏的订单号。源码在 `showcase/live.html`、`showcase/live.js`、`backend/showcase.py`，细节见 `PRESENTATION_SCRIPT.md` §7。

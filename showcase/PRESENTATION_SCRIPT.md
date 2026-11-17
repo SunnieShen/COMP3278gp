@@ -1,6 +1,11 @@
 # Presentation 脚本 v2 · slide × demo 分工版
 
-配套：[`showcase.html`](showcase.html)（排练用）。本文取代 `DEMO_SCRIPT.md` 的讲稿部分——v1 是按"独立 demo"写的，没考虑 slide 已经讲了什么，直接用会大量重复。
+配套两个页面，用途不同（详见 §7.1）：
+
+- [`showcase.html`](showcase.html) —— 硬编码数据的排练台，**不能进视频**
+- `http://127.0.0.1:5000/showcase/live` —— 真实应用 + 真实 MySQL 的录制台，**能进视频**（源码见 `showcase/live.html`、`backend/showcase.py`）
+
+本文取代 `DEMO_SCRIPT.md` 的讲稿部分——v1 是按"独立 demo"写的，没考虑 slide 已经讲了什么，直接用会大量重复。
 
 ---
 
@@ -10,12 +15,12 @@ Slide 共 8 页主内容 + 1 页 backup（见 §3.4 附表）。对照后有三�
 
 **重复点（slide 和 v1 demo 都在讲）**
 
-| # | 重复内容 | Slide 位置 | v1 demo 位置 | 处理 |
-|---|---|---|---|---|
-| A | ER：ISA / M:N / 弱实体 / `unit_price_snapshot` | S2 完整 ER 图 + S9 backup | §3.2 ER 段 43s | demo 整段删，ER 归 slide |
-| B | `unit_price_snapshot` 保留历史价 | S3 表格第 4 行 + S4 重复出现 | 镜 4 主口播 | demo 镜 4 改成「印证 slide 声明」，不再是首次介绍 |
-| C | CRUD 四类操作清单 | S7 明确列出 C/R/U/D 四条 | 视频 6 镜逐个念 | demo 不念操作名，改连续流程；S7 引入只当目录 |
-| D | 26 tests / 162 seed / README | S8 三栏完整呈现 | §3.4 收尾 25s | demo 收尾删，归 S8 |
+| # | 重复内容                                       | Slide 位置               | v1 demo 位置    | 处理                               |
+| - | ------------------------------------------ | ---------------------- | ------------- | -------------------------------- |
+| A | ER：ISA / M:N / 弱实体 / `unit_price_snapshot` | S2 完整 ER 图 + S9 backup | §3.2 ER 段 43s | demo 整段删，ER 归 slide              |
+| B | `unit_price_snapshot` 保留历史价                | S3 表格第 4 行 + S4 重复出现   | 镜 4 主口播       | demo 镜 4 改成「印证 slide 声明」，不再是首次介绍 |
+| C | CRUD 四类操作清单                                | S7 明确列出 C/R/U/D 四条     | 视频 6 镜逐个念     | demo 不念操作名，改连续流程；S7 引入只当目录       |
+| D | 26 tests / 162 seed / README               | S8 三栏完整呈现              | §3.4 收尾 25s   | demo 收尾删，归 S8                    |
 
 **缺口（slide 有一页是空的）**
 
@@ -34,14 +39,14 @@ Slide 共 8 页主内容 + 1 页 backup（见 §3.4 附表）。对照后有三�
 
 Slide 上的每一条设计声明，都应该在 demo 里有一个对应的「运行时证据」。这样两部分不但不重复，还互相扣分点接龙：
 
-| Slide 声明 | Demo 里对应的证据 |
-|---|---|
-| S2「one order model, two ways to order」 | 视频里一个订单从 solo 流程切到 group 流程 |
-| S3「unit_price_snapshot keeps historical prices」 | 镜 4：改数量，快照列不动 |
-| S3「backend checks ownership」（页脚） | 镜 5：只删自己的菜（Alice 删 Alice 的） |
-| S6「LEFT JOIN + COALESCE → 没点菜也显示 0」 | 镜 3：小计查询真实跑出结果 |
-| S6「事务：四表要么全建要么不建」 | 镜 2：四张表同时出现绿色新行 |
-| S8「Real CRUD」 | 视频 6 镜全程 |
+| Slide 声明                                        | Demo 里对应的证据                 |
+| ----------------------------------------------- | --------------------------- |
+| S2「one order model, two ways to order」          | 视频里一个订单从 solo 流程切到 group 流程 |
+| S3「unit_price_snapshot keeps historical prices」 | 镜 4：改数量，快照列不动               |
+| S3「backend checks ownership」（页脚）                | 镜 5：只删自己的菜（Alice 删 Alice 的） |
+| S6「LEFT JOIN + COALESCE → 没点菜也显示 0」             | 镜 3：小计查询真实跑出结果              |
+| S6「事务：四表要么全建要么不建」                               | 镜 2：四张表同时出现绿色新行             |
+| S8「Real CRUD」                                   | 视频 6 镜全程                    |
 
 讲的时候用**回指句**把两边缝起来，例如镜 4 的 "Slide 3 declared this rule; here it is actually holding."。这是承接，不是复读。
 
@@ -53,11 +58,11 @@ Slide 上的每一条设计声明，都应该在 demo 里有一个对应的「�
 
 **S6 填内容**——15 分项，不能空。按现有三列表头填这三行（就是 demo 里会真跑的两条 + 一条设计声明）：
 
-| Table | Key or constraint | Why it matters |
-|---|---|---|
+| Table                      | Key or constraint                                                            | Why it matters                                          |
+| -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `group_order_participants` | `LEFT JOIN order_items` + `COALESCE(SUM(quantity × unit_price_snapshot), 0)` | Member subtotals — a member with no items still shows 0 |
-| `group_order_status_view` | `CASE WHEN deadline > NOW() THEN 'open' ELSE 'locked' END` | Status derived from data — no scheduled job to flip it |
-| `orders` | one transaction → `orders` + `group_orders` + `participants` + `deliveries` | Group creation is atomic: all four rows, or none |
+| `group_order_status_view`  | `CASE WHEN deadline > NOW() THEN 'open' ELSE 'locked' END`                   | Status derived from data — no scheduled job to flip it  |
+| `orders`                   | one transaction → `orders` + `group_orders` + `participants` + `deliveries`  | Group creation is atomic: all four rows, or none        |
 
 S6 讲稿见 §5，视频镜 3 会回指这里。
 
@@ -68,10 +73,12 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 **S4 删表格末尾两行**（`order_items unit_price_snapshot` 和 `orders → coupons`），它们逐字重复 S3。删掉后 S4 聚焦 FK / CHECK / ENUM 本身的实现，S3 讲「是什么约束」，S4 讲「怎么落进 DDL」，正好分层。
 
 **S4 补一行 ENUM 或改标题**。二选一：
+
 - 补一行：`orders` · `fulfillment_type ENUM('Delivery','Self-Pickup')` · "Delivery creates a delivery record; pickup doesn't"（和 S5 的费用拆分正好呼应）
 - 或把标题里的 "ENUM" 去掉。
 
 **S7 截图与视频叙事对齐**。截图是 Bob 已登录的 Orders 页，而视频从 Alice 开始。两种处理任选：
+
 - 换成 Alice 视角的截图（如果 Google Slides 能本地改）；
 - 或者不改图，讲的时候一句话接住："This is Bob's view — he joins halfway through."（v2 讲稿已按此写，见 §5）
 
@@ -82,17 +89,17 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 ### 3.4 Slide 清单（当前状态）
 
-| 页 | 标题 | 讲者 | 现状 |
-|---|---|---|---|
-| S1 | 封面 | Zhen Qi | OK |
-| S2 | 01 ER DESIGN | Cheng Hengqi | OK（精简 ER 图） |
-| S3 | 02 RELATIONAL SCHEMA | Shen Hongshan | OK |
-| S4 | 03 DB IMPL · 约束实现 | Gong Jianxiang | 尾部两行冗余；缺 ENUM 行 |
-| S5 | 03 DB IMPL · 费用拆分 | Gong Jianxiang | OK |
-| S6 | 04 BACKEND & KEY SQL | Yang Ruizhen | **空白，必须填** |
-| S7 | 05 APPLICATION DEMO | Zhen Qi | OK，等视频 |
-| S8 | 06 DELIVERY & VERIFICATION | Zhen Qi | OK |
-| S9 | BACKUP 完整 ER | Cheng Hengqi | OK |
+| 页  | 标题                         | 讲者             | 现状              |
+| -- | -------------------------- | -------------- | --------------- |
+| S1 | 封面                         | Zhen Qi        | OK              |
+| S2 | 01 ER DESIGN               | Cheng Hengqi   | OK（精简 ER 图）     |
+| S3 | 02 RELATIONAL SCHEMA       | Shen Hongshan  | OK              |
+| S4 | 03 DB IMPL · 约束实现          | Gong Jianxiang | 尾部两行冗余；缺 ENUM 行 |
+| S5 | 03 DB IMPL · 费用拆分          | Gong Jianxiang | OK              |
+| S6 | 04 BACKEND & KEY SQL       | Yang Ruizhen   | **空白，必须填**      |
+| S7 | 05 APPLICATION DEMO        | Zhen Qi        | OK，等视频          |
+| S8 | 06 DELIVERY & VERIFICATION | Zhen Qi        | OK              |
+| S9 | BACKUP 完整 ER               | Cheng Hengqi   | OK              |
 
 ---
 
@@ -100,17 +107,17 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 总长 294 秒 = 4:54，留 6 秒缓冲。视频压到 slide 自己标注的 **1:50**。
 
-| 时间 | 时长 | 谁 | 页 | 内容 |
-|---|---|---|---|---|
-| 0:00–0:08 | 8s | Zhen Qi | S1 | 封面：一句话定位 |
-| 0:08–0:40 | 32s | Cheng Hengqi | S2 | ER |
-| 0:40–1:10 | 30s | Shen Hongshan | S3 | 关系模式与约束 |
-| 1:10–1:32 | 22s | Gong Jianxiang | S4 | DDL 实现（FK/CHECK/ENUM） |
-| 1:32–1:54 | 22s | Gong Jianxiang | S5 | 费用拆分 |
-| 1:54–2:34 | 40s | Yang Ruizhen | S6 | 关键 SQL |
-| 2:34–2:42 | 8s | Zhen Qi | S7 | 引入视频 |
-| 2:42–4:32 | 1:50 | 视频 | S7 | CRUD + 数据库操作 |
-| 4:32–4:54 | 22s | Zhen Qi | S8 | 收尾 |
+| 时间        | 时长   | 谁              | 页  | 内容                    |
+| --------- | ---- | -------------- | -- | --------------------- |
+| 0:00–0:08 | 8s   | Zhen Qi        | S1 | 封面：一句话定位              |
+| 0:08–0:40 | 32s  | Cheng Hengqi   | S2 | ER                    |
+| 0:40–1:10 | 30s  | Shen Hongshan  | S3 | 关系模式与约束               |
+| 1:10–1:32 | 22s  | Gong Jianxiang | S4 | DDL 实现（FK/CHECK/ENUM） |
+| 1:32–1:54 | 22s  | Gong Jianxiang | S5 | 费用拆分                  |
+| 1:54–2:34 | 40s  | Yang Ruizhen   | S6 | 关键 SQL                |
+| 2:34–2:42 | 8s   | Zhen Qi        | S7 | 引入视频                  |
+| 2:42–4:32 | 1:50 | 视频             | S7 | CRUD + 数据库操作          |
+| 4:32–4:54 | 22s  | Zhen Qi        | S8 | 收尾                    |
 
 全员发言核查：Cheng 32s / Shen 30s / Gong 44s / Yang 40s / Zhen 30s（live）+ 视频旁白。✅
 
@@ -174,14 +181,14 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 总长 110 秒。和 v1 的三点不同：**不念 CRUD 名字**（S7 已列）、**回指 slide**（承接而非重复）、**只讲 slide 上看不到的数据库证据**。旁白 Zhen Qi 3 镜、Yang Ruizhen 3 镜。
 
-| 镜 | 视频时间 | showcase Step | 画面 | 旁白 |
-|---|---|---|---|---|
-| 1 | 0:00–0:10 | Step 1 | 菜单页 + `menu_items` | Zhen Qi |
-| 2 | 0:10–0:32 | Step 2 | 建单 → 四表白屏 | Yang Ruizhen |
-| 3 | 0:32–0:54 | Step 3 | Bob 加入 + 小计查询 | Zhen Qi |
-| 4 | 0:54–1:14 | Step 4 | 改数量，快照不动 | Yang Ruizhen |
-| 5 | 1:14–1:34 | Step 5 | 删菜，行消失 | Zhen Qi |
-| 6 | 1:34–1:50 | Step 6 | Pending→Confirmed | Yang Ruizhen |
+| 镜 | 视频时间      | showcase Step | 画面                 | 旁白           |
+| - | --------- | ------------- | ------------------ | ------------ |
+| 1 | 0:00–0:10 | Step 1        | 菜单页 + `menu_items` | Zhen Qi      |
+| 2 | 0:10–0:32 | Step 2        | 建单 → 四表白屏          | Yang Ruizhen |
+| 3 | 0:32–0:54 | Step 3        | Bob 加入 + 小计查询      | Zhen Qi      |
+| 4 | 0:54–1:14 | Step 4        | 改数量，快照不动           | Yang Ruizhen |
+| 5 | 1:14–1:34 | Step 5        | 删菜，行消失             | Zhen Qi      |
+| 6 | 1:34–1:50 | Step 6        | Pending→Confirmed  | Yang Ruizhen |
 
 ---
 
@@ -203,7 +210,7 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 **镜 3 · 0:32–0:54 · 扣 S6 第 1 行（小计）**
 
-> Bob joins through the invite link. Now the subtotal query runs: `LEFT JOIN` with `COALESCE` — even a member who ordered nothing shows zero. This is the exact query from the previous slide, now on real data.
+> Bob joins through the invite link. Now the su<u>btotal query runs: `LEFT JOIN` with `COALESCE`</u> — even a member who ordered nothing shows zero. This is the exact query from the previous slide, now on real data.
 
 中文要点：**必须**说出 "the exact query from the previous slide"，这是 slide 和 demo 缝合的关键句。查询结果留在屏幕上 2 秒再切走。
 
@@ -235,12 +242,12 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 ### 语速核算（已按词数验证）
 
-| 镜 | 词数 | 秒 | wpm |
-|---|---|---|---|
+| 镜 | 词数 | 秒  | wpm |
+| - | -- | -- | --- |
 | 1 | 22 | 10 | 132 |
 | 2 | 37 | 22 | 101 |
 | 3 | 40 | 22 | 109 |
-| 4 | 33 | 20 | 99 |
+| 4 | 33 | 20 | 99  |
 | 5 | 40 | 20 | 120 |
 | 6 | 30 | 16 | 113 |
 
@@ -248,15 +255,48 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 
 ---
 
-## 7. 录制设置（继承 v1，只列变更）
+## 7. 录制设置
 
-完整设置看 git 里的 v1 版本（`git log --all -- showcase/DEMO_SCRIPT.md`），此处只列不变点和新增点：
+### 7.1 用哪个页面
 
-- 分屏、DBeaver auto-refresh、`Cmd+Shift+5`、1080p —— 同 v1
-- 重录前按子表→父表顺序 DELETE 残留订单 —— 同 v1
-- **新增**：镜 3 的小计查询要**预先跑一次**并截图，如果现场跑慢了就贴截图过渡（不要卡在等待上）
-- **新增**：视频旁白两人各录 3 镜，录完拼轨，不要一人代录全部（评分要求全员参与，视频里的声音也算）
-- **新增**：口播里出现 "previous slide" / "Slide 3" 的两处回指，录的时候**手上动作要同步**——说到 "the exact query" 时鼠标就停在查询结果上
+目录里有两个长得像的页面，用途完全不同，别弄混：
+
+| 页面                                        | 数据来源                              | 能进视频？  | 用途         |
+| ----------------------------------------- | --------------------------------- | ------ | ---------- |
+| `showcase/showcase.html`（双击本地打开）          | **硬编码 seed 数据 + JS 状态机**          | **不能** | 排练、对词、离线讲解 |
+| **`http://127.0.0.1:5000/showcase/live`** | **真实 Flask iframe + 真实 MySQL 查询** | **能**  | 正式录制       |
+
+
+`/showcase/live` 就是「把 MySQL 操作页面拼进来」的成品：三栏一屏，左栏 iframe 跑真实应用，中栏显示后端**实际执行**的 SELECT，右栏每 2 秒从 `group_eats_local` 拉一次真实行。全部同源，不需要分屏、不需要 DBeaver。
+
+已验证可用（2026-11-17）：
+
+```bash
+# 未登录 → 拒绝
+curl -s http://127.0.0.1:5000/api/v1/showcase/group-orders/94002
+# {"error":{"code":"AUTH_REQUIRED","message":"Please log in."}}
+
+# 登录 Alice 后 → 真实数据
+# database: group_eats_local
+# people:   Alice Wong, Bob Chan
+# order_items: 92001×1@68.00 (Alice) / 92001×1@68.00 (Bob) / 92002×2@22.00 (Bob)
+```
+
+### 7.2 录制流程
+
+1. 浏览器打开 `http://127.0.0.1:5000/showcase/live`
+2. 左栏登录 Alice（`alice@example.com` / `DemoPass3278!`），右栏会显示 "Not signed in" → 登录后自动接上
+3. 勾上 **Follow order**：左栏进入 `#/group/<id>` 时，右栏自动跟着切到那个订单，**不用手输订单号**
+4. 勾上 **Auto steps**：顶部步骤条会按 6 镜顺序提示该做什么
+5. 点 **Copy SQL** 或 **Workbench SQL ↓** 可以拿到当前订单的真实 SELECT，用于讲 SQL 时贴出来
+
+### 7.3 其余要点
+
+- 只录浏览器窗口，1080p，`Cmd+Shift+5` 开麦克风；页面用「专注模式」可隐藏顶栏
+- 重录前按子表→父表顺序 DELETE 残留订单（`order_items` → `group_order_participants` → `deliveries` → `group_orders` → `orders`）
+- 镜 3 的小计要**预先跑一次**并截图，现场若慢就贴图过渡
+- 视频旁白两人各 3 镜，录完拼轨（评分要求全员参与，视频里的声音也算）
+- 口播里 "previous slide" / "Slide 3" 两处回指，说到时鼠标要同步停在结果上
 
 ---
 
@@ -265,6 +305,7 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 ### 检查清单
 
 **环境**
+
 - [ ] 演示机 MySQL 8.0.16+ 在跑，`python app.py` 起得来，`127.0.0.1:5000` 打得开
 - [ ] `.env` 的 host / port / database 与**真实在跑**的实例一致（本机临时实例用 33307 / `group_eats_local`，没问题，关键是能连上）
 - [ ] README 里 "Kelly's current WSL machine" 那段改成中性表述，否则 marker 照抄连不上
@@ -272,11 +313,19 @@ S6 讲稿见 §5，视频镜 3 会回指这里。
 - [ ] Bob 用隐私窗口（独立会话），不是同一窗口的两个标签页
 
 **数据**
+
 - [ ] 上次录制的残留订单已清（子表先删）
-- [ ] 常驻两条 `SELECT` 已在客户端写好并跑通
 - [ ] 不要在建单前 reseed
 
+**录制台**
+
+- [ ] `http://127.0.0.1:5000/showcase/live` 打得开，左栏能登录 Alice
+- [ ] 登录后右栏从 "Not signed in" 变成真实表行（能看到 `group_eats_local` 库名）
+- [ ] **Follow order** 已勾上：左栏进 `#/group/<id>` 后右栏自动切过去，手输订单号不需要
+- [ ] **Workbench SQL ↓** 能下载到 `.sql`（说明后端 SQL 回显正常）
+
 **slide 与 demo 对齐**
+
 - [ ] S6 已经填上 §3.1 的三行
 - [ ] S4 尾部冗余两行已删
 - [ ] S7 占位符已换成真视频
