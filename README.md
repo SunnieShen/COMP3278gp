@@ -2,7 +2,7 @@
 
 **Group Eats (foodpanda)** — COMP3278 final project.
 
-Buyers place individual orders or create and join group orders. Each member adds their own items. The application is a local Flask website connected to MySQL. The browser never connects to the database directly.
+Buyers place individual orders or create and join group orders. Each member adds their own items. The application is a local Flask website connected to MySQL. 
 
 The schema contains **18 tables and 2 views**. The running application supports login, catalogue browsing, individual and group orders, item CRUD, favourites, coupons, place/cancel, order history, and simulated completion.
 
