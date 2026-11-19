@@ -1,276 +1,141 @@
-# COMP3278gp
+# foodpanda — COMP3278 Final Project
 
-**Group Eats (foodpanda)** — COMP3278 final project.
+A food-ordering application built with HTML/CSS/JavaScript, Flask and MySQL. It supports individual orders and group orders with separate item ownership, delivery-fee sharing, favourites and coupons.
 
-Buyers place individual orders or create and join group orders. Each member adds their own items. The application is a local Flask website connected to MySQL. 
+## Run the integrated application
 
-The schema contains **18 tables and 2 views**. The running application supports login, catalogue browsing, individual and group orders, item CRUD, favourites, coupons, place/cancel, order history, and simulated completion.
+### 1. Requirements
 
-## Requirements
+- Python 3.10 or later (validated with Python 3.10.12).
+- An installed, running MySQL **8.0.16+** server (validated with MySQL 8.4.7). MySQL is not bundled; install/start it before initializing the database.
+- A MySQL account allowed to create the selected database and tables. Use a **new, empty database name**. Initial dependency installation requires internet access; frontend images are included locally.
 
-- Python 3.10 or later
-- MySQL 8.0.16 or later (CHECK constraints must be enforced)
-- A MySQL account that can create a database and tables
+Run all commands from this folder, next to `app.py`. No Node.js, npm build, Docker or GitHub hosting is required.
 
-Flask serves the web pages and the API together. Node.js is not required.
+### 2. Install dependencies
 
-## 1. Install the application
-
-**Linux / macOS / WSL:**
+Linux / macOS / WSL:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements-lock.txt
 cp .env.example .env
 ```
 
-**Windows PowerShell:**
+Windows PowerShell:
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-lock.txt
 Copy-Item .env.example .env
 ```
 
-Copy `.env.example` only on first setup. Do not overwrite an existing `.env`.
+If PowerShell blocks activation, use `.\.venv\Scripts\python.exe` instead of `python` in the remaining commands; activation is not otherwise required. `requirements-lock.txt` pins the validated dependencies; `requirements.txt` lists the direct dependency ranges.
 
-## 2. Configure the database connection
+### 3. Configure MySQL
 
-Edit `.env`:
+Edit `.env` with **your own** MySQL connection settings. For a typical local server:
 
-| Variable | Purpose | Example |
-|---|---|---|
-| `SECRET_KEY` | Flask session secret | `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `MYSQL_HOST` | MySQL host | `127.0.0.1` |
-| `MYSQL_PORT` | MySQL port | `3306` |
-| `MYSQL_USER` | MySQL user | `root` |
-| `MYSQL_PASSWORD` | MySQL password | the password set when MySQL was installed |
-| `MYSQL_DATABASE` | Empty target database name | `group_eats` |
-| `PORT` | Website port | `5000` |
+```dotenv
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=comp3278_foodpanda
+PORT=5000
+```
 
-`DELIVERY_FEE_CENTS` defaults to `1000` (HK$10.00). `DEMO_COURIER_USER_ID` defaults to seeded courier `90201`.
+An empty MySQL password is supported if that is how your local account is configured. The database name can contain letters, numbers and underscores. These are local settings, not a hosted database or a supplied account. Keep the remaining settings from `.env.example` unless changing a documented behaviour below.
 
-## 3. Create the schema and load sample data
+Generate a private session key:
 
-Start MySQL, then from the repository root:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Paste its output into `SECRET_KEY` in `.env`, replacing the template value. No private configuration or passwords are included in this archive.
+
+### 4. Create the database with data and start the app
 
 ```bash
 python -m backend.manage init
-```
-
-`init` uses `MYSQL_DATABASE` and:
-
-1. Creates the database if it does not exist.
-2. Runs `db/schema.sql` (18 tables and 2 views).
-3. Imports `db/seed.sql` (162 related records).
-4. Sets usable password hashes for the two demo buyers.
-
-It refuses a database that already contains tables. It does not delete an existing application database. To reproduce from scratch, choose a new empty `MYSQL_DATABASE` name.
-
-Alternative shell import (same schema and seed; then set demo passwords):
-
-```bash
-bash db/setup.sh
-bash db/seed.sh
-python -m backend.manage demo-accounts
-```
-
-`setup.sh` and `seed.sh` prompt for the MySQL password. Importing `seed.sql` alone leaves placeholder hashes until `demo-accounts` is run.
-
-## 4. Run the application
-
-```bash
 python app.py
 ```
 
-Open **http://127.0.0.1:5000**.
+Open **http://127.0.0.1:5000**. Press Ctrl+C in the terminal to stop the server. If changing `PORT`, open that port instead. MySQL Workbench is optional; Flask serves the frontend and backend together.
 
-If that address is not this application (on some macOS machines port 5000 is used by AirPlay), set `PORT=5001` in `.env`, restart `python app.py`, and open **http://127.0.0.1:5001**.
-
-Leave the terminal running while using the site. Stop the server with Ctrl+C.
-
-### Demo accounts
-
-Local course demonstration only. There is no registration.
+`init` creates the database, imports **18 tables, 2 views and 162 related sample records**, and prepares the demo buyers' password hashes. It refuses to initialize a database that already contains tables. Run it once for a new database, not at every startup. On later runs, use `python app.py` only.
 
 | Buyer | Email | Password |
 |---|---|---|
-| Alice | alice@example.com | DemoPass3278! |
-| Bob | bob@example.com | DemoPass3278! |
+| Alice | alice@gmail.com | 123456 |
+| Bob | bob@gmail.com | 123456 |
 
-Use Alice in a normal window and Bob in a private window to operate the same group. Two ordinary tabs share one login.
+These are local demonstration accounts, not Gmail logins. Other fixture users are database examples and are not documented login accounts. Importing `db/seed.sql` manually leaves placeholder password hashes; afterwards run `python -m backend.manage demo-accounts` to prepare the two logins. The recommended `init` command does this automatically.
 
-Alice’s unused coupon is `ALICE10` (minimum HK$30). Bob’s is `BOB5`. Apply the code on a pending order. A group coupon is applied by the host and reduces the host’s share only. After a group deadline, the host may still remove a coupon from a pending group and then place the order. Adding or replacing a coupon, and editing items, still require an open group.
+## Verify CRUD through the website
 
-The UI reads the 4 seeded sellers and 9 items. Images are local files, not database columns.
+1. **Read:** log in as Alice, open Harbour Cafe and inspect its menu and existing orders.
+2. **Create:** start a group with a deadline 15 minutes ahead and add chicken rice.
+3. Copy the invite into a private window or separate browser profile. Log in as Bob, join and add milk tea. Two ordinary tabs share one session.
+4. **Update:** change Bob's milk tea quantity from 1 to 2; its stored unit price stays at HK$22.
+5. **Delete:** Bob leaves. His items and membership are deleted; Alice's food remains. Removing one food item also executes DELETE.
+6. Alice places the remaining order. Refresh or open Orders to verify that Confirmed and the stored records persist.
 
-### Live three-panel showcase
+Cancellation changes an order's status; it is not physical deletion. Only the host can place a group. Members can change only their own items, while the order is Pending and before its deadline. The host may place a nonempty group before or after the deadline. Submission makes it read-only.
 
-After the app is running, open **http://127.0.0.1:5000/showcase/live** (use the same port as `python app.py`).
+The same website also supports individual-order item CRUD, favourites and coupon application/removal. Address management, account registration, real payment and merchant/courier screens are outside the implemented interface.
 
-The page embeds the website, shows the matching SQL, and polls live MySQL rows every two seconds. Sign in as Alice in the embedded site and create a group. Open the invite as Bob in a private window. Step buttons change guidance only; they do not write to the database. **Copy SQL** and **Workbench SQL** export the SELECT statements for Workbench.
+## Database configuration and inspection
 
-Snapshots require a buyer login. Group tables require membership. The showcase does not run arbitrary SQL and does not expose password hashes.
+- New delivery orders use `DELIVERY_FEE_CENTS` from `.env` (default `1000`, or HK$10) and the Available seeded courier `90201`. Zero is supported; pickup has no delivery record.
+- Delivery fees are divided in integer cents, with any remainder assigned to the host. Prices are saved in `order_items.unit_price_snapshot`.
+- A group coupon applies to its host's share. Demo codes: Alice `ALICE10` (HK$30 minimum), Bob `BOB5`.
+- New submissions store `placed_at` and a completion time 15–60 minutes later. The local background worker changes due orders to Completed and deliveries to Delivered. This does not dispatch a real courier or collect payment.
+- Times use Hong Kong time (`+08:00`). Old seeded statuses remain unchanged unless an applicable operation is performed.
 
-## 5. Inspect the data in Workbench
+Inspect with the MySQL command line, replacing the connection values with those in `.env`:
 
-Result grids do not refresh by themselves. Run the SELECT again after each page action.
-
-Connect to `127.0.0.1:3306` with the same user, password, and database as `.env`.
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p comp3278_foodpanda
+```
 
 ```sql
-SELECT DATABASE();
 SHOW TABLES;
-SELECT order_id, host_user_id, order_status, coupon_id
-FROM orders
-WHERE host_user_id = 90001
-ORDER BY order_id DESC
-LIMIT 10;
-SELECT buyer_user_id, seller_user_id, saved_time
-FROM favorite_sellers
-WHERE buyer_user_id = 90001;
+SELECT order_id, host_user_id, order_status FROM orders ORDER BY order_id DESC;
+SELECT order_id, user_id, item_id, quantity, unit_price_snapshot FROM order_items;
+SELECT order_id, buyer_user_id FROM group_order_participants;
 ```
 
-Alice is `user_id` `90001`. Command-line equivalent:
+Run the SELECT statements again after a website action to see committed changes. Type `exit` to leave MySQL. Workbench can use the same host, port, user and database.
+
+For the optional three-panel demonstration, open **http://127.0.0.1:5000/showcase/live**. It embeds the real website and queries live MySQL every 0.5 seconds. See [the demo workflow](showcase/DEMO_SCRIPT.md). The API requires login and group membership; it does not accept arbitrary SQL.
+
+## Tests and reproducibility
 
 ```bash
-mysql -h 127.0.0.1 -P 3306 -u root -p group_eats
+python -m unittest discover -s tests -p "test_api.py"
 ```
 
-## 6. Tests
+The 29 integration tests create a randomly named temporary database, seed it, run checks and drop **that test database only**. The account running tests needs CREATE and DROP DATABASE privileges. Tests cover real CRUD, permissions/CSRF, ownership, transaction rollback, concurrency, fees, coupons, deadlines, completion and showcase access control. See [validation results](docs/VALIDATION.md).
 
-```bash
-python -m unittest discover -s tests -v
-```
+To reproduce from scratch, choose another empty `MYSQL_DATABASE` and run `init`. Do not reseed a database whose current orders you want to preserve. Existing-installation helpers and migrations are supplied under `db/`; new installations need only `init`.
 
-The suite creates a temporary `group_eats_test_*` database, imports the real schema and seed, then drops that test database. It does not clear `MYSQL_DATABASE`. The MySQL account needs `CREATE` and `DROP DATABASE` privileges.
+## Source and design files
 
-## How to use the site
+| Path | Contents |
+|---|---|
+| `app.py`, `backend/` | Flask entry point, API, MySQL operations, initialization and completion worker |
+| `frontend/` | Application HTML/CSS/JS and all image assets; [asset attribution](frontend/assets/SOURCES.md) |
+| `db/schema.sql`, `db/seed.sql` | Relational schema, keys/constraints, views and initial data |
+| `ER/ER03.png`, `ER/ER03.drawio` | Current ER diagram and editable source |
+| `docs/DATABASE_DESIGN.md` | English database design specification |
+| `docs/API.md` | API contract and field mapping |
+| `tests/` | Integration test suite |
+| `showcase/` | Live database demonstration interface and workflow |
 
-1. Log in as Alice.
-2. Open a store.
-3. **Order for myself** or **Start a group order**.
-4. Add, change, or remove items. Place the order, or cancel it before placement.
-5. Copy the group invite link. Log in as Bob in a private window, join, and add Bob’s items.
-6. Use hearts for favourites. Apply a coupon on a pending order.
+Team: Cheng Hengqi (ER), Shen Hongshan (relational schema), Gong Jianxiang (database), Yang Ruizhen (backend), Zhen Qi (frontend, review and README).
 
-Cancellation keeps the order row and sets `coupon_id` to NULL. Confirmed orders are read-only. Joining and item edits stop at the group deadline (Hong Kong time). The host may place a non-empty pending group before or after the deadline. Placement is not online payment.
-
-## Database design
-
-The schema follows [ER03](ER/ER03.png) ([draw.io source](ER/ER03.drawio)) and `db/schema.sql`.
-
-![ER diagram](ER/ER03.png)
-
-PK = primary key. FK = foreign key. UK = unique key.
-
-| Table | Keys / main fields | Purpose |
-|---|---|---|
-| `users` | `user_id` PK, `email` UK, `password_hash` | Account |
-| `buyers` | `user_id` PK/FK → users | Buyer role |
-| `sellers` | `user_id` PK/FK → users | Seller role |
-| `couriers` | `user_id` PK/FK → users | Courier role |
-| `restaurants` | `user_id` PK/FK → sellers | Restaurant subtype |
-| `grocery_stores` | `user_id` PK/FK → sellers | Grocery subtype |
-| `addresses` | `address_id` PK, `buyer_user_id` FK | Saved addresses (not used at checkout) |
-| `menu_items` | `item_id` PK, `seller_user_id` FK | Catalogue |
-| `coupons` | `coupon_id` PK, `buyer_user_id` FK | Per-buyer voucher |
-| `orders` | `order_id` PK, `host_user_id` FK, `seller_user_id` FK, `coupon_id` UK/FK | Order header |
-| `solo_orders` | `order_id` PK/FK → orders | Individual order |
-| `group_orders` | `order_id` PK/FK → orders, `deadline` | Group order |
-| `group_order_participants` | (`order_id`, `buyer_user_id`) PK | Group membership |
-| `order_items` | (`order_id`, `user_id`, `item_id`) PK, `quantity`, `unit_price_snapshot` | Line items |
-| `favorite_sellers` | (`buyer_user_id`, `seller_user_id`) PK | Saved stores |
-| `favorite_items` | (`buyer_user_id`, `item_id`) PK | Saved dishes |
-| `seller_ratings` | (`buyer_user_id`, `seller_user_id`) PK, `score` | One score per pair |
-| `deliveries` | `delivery_id` PK, `order_id` UK/FK | At most one delivery per order |
-
-Views: `seller_rating_view` (average score), `group_order_status_view` (`open` / `locked` from the deadline).
-
-Each user has exactly one role (buyer, seller, or courier). Each seller is a restaurant or a grocery store. Each order is individual or group. Role exclusivity is enforced by the application. Totals use `SUM(quantity * unit_price_snapshot)`. Delivery fees are split in integer cents; remainder goes to the host. Pickup has no delivery row.
-
-### Implemented operations
-
-| Feature | SQL effect | Tables |
-|---|---|---|
-| Login and catalogue | Read | `users`, `buyers`, `sellers`, `menu_items` |
-| Create individual / group order | Create | `orders`, `solo_orders` / `group_orders`, `deliveries` |
-| Join / leave a group | Create / Delete | `group_order_participants`, `order_items` |
-| Add / change / remove items | Create / Update / Delete | `order_items` |
-| Place / cancel | Update | `orders` (`coupon_id` cleared on cancel) |
-| Favourites | Create / Read / Delete | `favorite_sellers`, `favorite_items` |
-| Apply / remove a coupon | Update | `orders`, `coupons` |
-
-Not implemented: registration, checkout address selection, online payment, merchant screens, courier screens.
-
-### Sample queries after `init`
-
-```sql
-SELECT p.order_id, u.user_id, u.username,
-       COALESCE(SUM(i.quantity * i.unit_price_snapshot), 0) AS item_subtotal
-FROM group_order_participants p
-JOIN users u ON u.user_id = p.buyer_user_id
-LEFT JOIN order_items i
-  ON i.order_id = p.order_id AND i.user_id = p.buyer_user_id
-WHERE p.order_id = 94002
-GROUP BY p.order_id, u.user_id, u.username;
-
-SELECT order_id, deadline, group_status
-FROM group_order_status_view;
-```
-
-The first query returns `90001 = 68.00` and `90002 = 112.00`. The second returns six `open` and three `locked` group orders.
-
-## Task allocation
-
-| Task | Description | Assigned to |
-|---|---|---|
-| ER Diagram | Identify entities, attributes, and relationships. | Cheng Hengqi |
-| Relational Schema | Define tables, keys, and constraints. | Shen Hongshan |
-| Database Implementation | Set up MySQL, tables, and sample data. | Gong Jianxiang |
-| Frontend, Code Review & README | Build the frontend, review code, and document setup. | Zhen Qi |
-| Backend & Integration | Implement SQL and connect the frontend to MySQL. | Yang Ruizhen |
-
-## Repository structure
-
-```text
-ER/                 ER03 diagram and draw.io source
-db/schema.sql       18 tables and 2 views
-db/seed.sql         162 seed records
-db/setup.sh         Optional schema import
-db/seed.sh          Optional seed import
-backend/            Flask API and SQL
-app.py              Application entry point
-requirements.txt    Python dependencies
-.env.example        Connection template (copy to .env; do not commit .env)
-tests/              MySQL integration tests
-frontend/           Web UI and local images
-showcase/           Live three-panel SQL showcase
-docs/               API contract
-```
-
-## Existing databases
-
-If the database already has the current tables, do not run `init`.
-
-```bash
-python -m backend.manage seed
-```
-
-refreshes seed rows and demo passwords. `python -m backend.manage demo-accounts` updates only Alice and Bob. Do not reseed during a demonstration.
-
-If the database was created from an earlier schema, run once:
-
-```bash
-python -m backend.manage migrate
-```
-
-This renames the creation timestamp to `created_at`, adds completion columns, and inserts missing demo coupons `ALICE10` and `BOB5`. Existing coupons, orders, and passwords are kept. Repeating `migrate` does not create duplicate vouchers.
-
-If the old column `orders.buyer_user_id` is still present:
-
-```bash
-mysql -u root -p group_eats < db/migrations/001_rename_order_buyer_to_host.sql
-```
+This archive contains the source, database scripts and run instructions required for Moodle submission. Presentation slides and the demonstration video are separate presentation materials. Local environments, credentials, database dumps, Git history, recording assets and draft documents are excluded.

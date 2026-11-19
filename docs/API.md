@@ -1,6 +1,5 @@
 # Frontend–Backend Contract v1
 
-**English** | [简体中文](API.zh-CN.md)
 
 Implemented contract: buyer login, catalog browsing, individual/group orders, membership, item CRUD, summaries, placement, cancellation, simulated completion, favourites and coupons. The ER03 entities are retained; orders adds three operational timestamps for completion.
 
@@ -216,3 +215,6 @@ Order list/detail and placement responses expose placed_at, completion_due_at an
 - `GET /showcase/group-orders/{id}/queries.sql`: members only; matching read-only Workbench worksheet download.
 
 All paths use the `/api/v1` prefix and require a buyer session. Related tables are read in one transaction; decimals retain their precision as strings and dates use Hong Kong ISO timestamps. Only fixed parameterized SELECT statements execute. Clients cannot submit SQL, choose arbitrary tables or supply database credentials.
+
+- `GET /api/v1/showcase/existing`: authenticated, read-only snapshot of the latest 30 orders owned by or shared with the current buyer, related group/member/item/delivery rows, and up to 30 menu items.
+- `GET /api/v1/showcase/existing/queries.sql`: download the matching SELECT worksheet with the same access rules.

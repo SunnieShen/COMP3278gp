@@ -1,7 +1,7 @@
 """Authenticated, read-only MySQL snapshots for the local live showcase."""
 from datetime import datetime
 from decimal import Decimal
-from flask import Blueprint, Response, g, jsonify, send_from_directory
+from flask import Blueprint, Response, g, jsonify, send_from_directory, session
 from .app import ROOT, PREFIX, buyer, group_record, member, seller_record, integer, now, stamp
 from .db import query, transaction
 
@@ -61,6 +61,53 @@ WHERE p.order_id=%s ORDER BY u.user_id''', (order_id,))
                 'people': people, 'tables': tables}
 
 
+def _existing_snapshot():
+    with transaction():
+        # Existing and newly created orders use the same ownership rules.
+        allowed = query('''SELECT o.order_id FROM orders o
+WHERE o.host_user_id=%s OR EXISTS (
+    SELECT 1 FROM group_order_participants p
+    WHERE p.order_id=o.order_id AND p.buyer_user_id=%s)
+ORDER BY o.order_id DESC LIMIT 30''', (g.user['user_id'], g.user['user_id']))
+        ids = tuple(row['order_id'] for row in allowed)
+        where = 'order_id IN (' + ','.join(['%s'] * len(ids)) + ')' if ids else '1=0'
+        specs = [
+            ('orders', ['order_id','order_status','host_user_id','seller_user_id','fulfillment_type','created_at','placed_at','completion_due_at','completed_at']),
+            ('group_orders', ['order_id','deadline']),
+            ('group_order_participants', ['order_id','buyer_user_id']),
+            ('order_items', ['order_id','user_id','item_id','quantity','unit_price_snapshot']),
+            ('deliveries', ['delivery_id','order_id','courier_user_id','delivery_status','shipping_fee','delivery_timestamp']),
+        ]
+        tables = [_table(name, columns,
+            f"SELECT {','.join(columns)} FROM {name} WHERE {where} ORDER BY order_id DESC" +
+            (',buyer_user_id' if name == 'group_order_participants' else ',user_id,item_id' if name == 'order_items' else ''), ids)
+            for name, columns in specs]
+        tables.append(_table('menu_items', ['item_id','seller_user_id','item_name','price','availability_status'],
+            'SELECT item_id,seller_user_id,item_name,price,availability_status FROM menu_items ORDER BY item_id LIMIT 30', ()))
+        return {'source': _source(), 'order_id': None, 'view': 'existing', 'people': [], 'tables': tables}
+
+
+def _worksheet(data, filename):
+    name = data['source']['database'].replace('`', '``')
+    lines = ['-- Read-only showcase queries', f'USE `{name}`;', '']
+    for table in data['tables']:
+        lines += ['-- ' + table['name'], table['sql'], '']
+    return Response('\n'.join(lines), mimetype='application/sql',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+
+@blueprint.get(PREFIX + '/showcase/existing')
+@buyer
+def existing():
+    return jsonify(data=_existing_snapshot())
+
+
+@blueprint.get(PREFIX + '/showcase/existing/queries.sql')
+@buyer
+def existing_worksheet():
+    return _worksheet(_existing_snapshot(), 'foodpanda-existing.sql')
+
+
 @blueprint.get('/showcase/live')
 def live_page():
     return send_from_directory(ROOT / 'showcase', 'live.html')
@@ -80,12 +127,22 @@ def catalog(seller_id):
     integer(seller_id)
     with transaction():
         seller_record(seller_id)
-        table = _table('menu_items', ['item_id','seller_user_id','item_name','price','availability_status'],
-            '''SELECT item_id,seller_user_id,item_name,price,availability_status
+        table = _table('menu_items', ['item_id','item_name','price'],
+            '''SELECT item_id,item_name,price
 FROM menu_items WHERE seller_user_id=%s ORDER BY item_id''', (seller_id,))
-        snapshot = {'source': _source(), 'order_id': None, 'seller_user_id': seller_id,
+        snapshot = {'source': _source(), 'order_id': None, 'seller_user_id': seller_id, 'view': 'catalog',
                     'people': [], 'tables': [table]}
     return jsonify(data=snapshot)
+
+
+@blueprint.post(PREFIX + '/showcase/restart')
+def restart():
+    # The application's normal CSRF check also protects this route.
+    session.clear()
+    return Response(status=204, headers={
+        'Clear-Site-Data': '"cache", "storage"',
+        'Cache-Control': 'no-store',
+    })
 
 
 @blueprint.get(PREFIX + '/showcase/session')
@@ -105,10 +162,4 @@ def snapshot(order_id):
 @blueprint.get(PREFIX + '/showcase/group-orders/<int:order_id>/queries.sql')
 @buyer
 def worksheet(order_id):
-    data = _group_snapshot(order_id)
-    name = data['source']['database'].replace('`', '``')
-    lines = [f'-- Read-only showcase queries for group {order_id}', f'USE `{name}`;', '']
-    for table in data['tables']:
-        lines += ['-- ' + table['name'], table['sql'], '']
-    return Response('\n'.join(lines), mimetype='application/sql',
-        headers={'Content-Disposition': f'attachment; filename="foodpanda-group-{order_id}.sql"'})
+    return _worksheet(_group_snapshot(order_id), f'foodpanda-group-{order_id}.sql')

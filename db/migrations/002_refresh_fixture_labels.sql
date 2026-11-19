@@ -1,9 +1,9 @@
 -- Refresh only reserved sample display labels; preserve IDs, prices, orders and passwords.
 START TRANSACTION;
 UPDATE users SET username='Alice Wong' WHERE user_id=90001 AND username='Test Buyer Alice';
-UPDATE users SET email='alice@example.com' WHERE user_id=90001 AND email='alice.test@example.invalid';
+UPDATE users SET email='alice@gmail.com' WHERE user_id=90001 AND email='alice.test@example.invalid';
 UPDATE users SET username='Bob Chan' WHERE user_id=90002 AND username='Test Buyer Bob';
-UPDATE users SET email='bob@example.com' WHERE user_id=90002 AND email='bob.test@example.invalid';
+UPDATE users SET email='bob@gmail.com' WHERE user_id=90002 AND email='bob.test@example.invalid';
 UPDATE users SET username='Carol Lee' WHERE user_id=90003 AND username='Test Buyer Carol';
 UPDATE users SET email='carol@example.com' WHERE user_id=90003 AND email='carol.test@example.invalid';
 UPDATE users SET username='David Lam' WHERE user_id=90004 AND username='Test Buyer David';

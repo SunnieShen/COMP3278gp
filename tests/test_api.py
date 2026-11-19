@@ -54,7 +54,7 @@ class APIIntegration(unittest.TestCase):
     def login(self, name):
         client = self.app.test_client()
         token = client.get('/api/v1/auth/session').json['data']['csrf_token']
-        response = client.post('/api/v1/auth/login', json={'email':f'{name}@example.com','password':DEMO_PASSWORD}, headers={'X-CSRF-Token':token})
+        response = client.post('/api/v1/auth/login', json={'email':f'{name}@gmail.com','password':DEMO_PASSWORD}, headers={'X-CSRF-Token':token})
         self.assertEqual(response.status_code,200,response.json)
         return client,response.json['data']['csrf_token']
 
@@ -111,7 +111,7 @@ class APIIntegration(unittest.TestCase):
         self.assertEqual(anon.get('/api/v1/group-orders').status_code,401)
         self.assertEqual(anon.post('/api/v1/auth/login',json={}).status_code,403)
         t=anon.get('/api/v1/auth/session').json['data']['csrf_token']
-        bad=self.write(anon,t,'/auth/login',data={'email':'alice@example.com','password':'wrong'})
+        bad=self.write(anon,t,'/auth/login',data={'email':'alice@gmail.com','password':'wrong'})
         self.assertEqual(bad.status_code,401)
         session=self.a.get('/api/v1/auth/session').json['data']
         self.assertNotIn('password_hash',str(session))
@@ -539,7 +539,54 @@ class APIIntegration(unittest.TestCase):
         catalog = self.a.get('/api/v1/showcase/catalog/90101').json['data']
         self.assertEqual(catalog['tables'][0]['name'],'menu_items')
         self.assertEqual(catalog['tables'][0]['rows'][0]['price'],'68.00')
+        self.assertEqual(catalog['view'],'catalog')
+        self.assertEqual(catalog['tables'][0]['columns'],['item_id','item_name','price'])
+        self.assertEqual(set(catalog['tables'][0]['rows'][0]),{'item_id','item_name','price'})
+        self.assertIn('SELECT item_id,item_name,price',catalog['tables'][0]['sql'])
         self.assertEqual(self.sql('SELECT * FROM orders ORDER BY order_id'),before)
+
+    def test_showcase_existing_data_is_scoped_live_and_read_only(self):
+        url='/api/v1/showcase/existing'
+        anon=self.app.test_client()
+        self.assertEqual(anon.get(url).status_code,401)
+        self.assertEqual(anon.get(url+'/queries.sql').status_code,401)
+        before=self.sql('SELECT * FROM orders ORDER BY order_id')
+        for client,uid in ((self.a,90001),(self.b,90002)):
+            response=client.get(url)
+            self.assertEqual(response.status_code,200,response.json)
+            self.assertEqual(response.headers['Cache-Control'],'no-store')
+            data=response.json['data']
+            self.assertEqual(data['view'],'existing')
+            tables={t['name']:t for t in data['tables']}
+            expected={r['order_id'] for r in self.sql('''SELECT o.order_id FROM orders o
+                WHERE o.host_user_id=%s OR EXISTS (SELECT 1 FROM group_order_participants p
+                WHERE p.order_id=o.order_id AND p.buyer_user_id=%s)
+                ORDER BY o.order_id DESC LIMIT 30''',(uid,uid))}
+            self.assertTrue(expected)
+            self.assertEqual({r['order_id'] for r in tables['orders']['rows']},expected)
+            for name,t in tables.items():
+                if name!='menu_items':
+                    self.assertTrue(all(r['order_id'] in expected for r in t['rows']))
+            self.assertEqual(tables['menu_items']['rows'][0]['price'],'68.00')
+            self.assertNotIn('password',str(data).lower())
+            worksheet=client.get(url+'/queries.sql')
+            self.assertEqual(worksheet.status_code,200)
+            text=worksheet.get_data(as_text=True)
+            for table in data['tables']:
+                self.assertIn(table['sql'],text)
+            self.assertNotIn('%s',text)
+        self.assertEqual(self.sql('SELECT * FROM orders ORDER BY order_id'),before)
+        oid=self.create()
+        tables={t['name']:t for t in self.a.get(url).json['data']['tables']}
+        self.assertIn(oid,[r['order_id'] for r in tables['orders']['rows']])
+        self.assertNotIn(oid,[r['order_id'] for t in self.b.get(url).json['data']['tables'] if t['name']=='orders' for r in t['rows']])
+        self.write(self.b,self.tb,f'/group-orders/{oid}/members/me','PUT')
+        self.write(self.b,self.tb,f'/group-orders/{oid}/items/92002','PUT',{'quantity':2})
+        tables={t['name']:t for t in self.b.get(url).json['data']['tables']}
+        self.assertTrue(any(r['order_id']==oid and r['quantity']==2 for r in tables['order_items']['rows']))
+        self.write(self.b,self.tb,f'/group-orders/{oid}/members/me','DELETE')
+        tables={t['name']:t for t in self.b.get(url).json['data']['tables']}
+        self.assertNotIn(oid,[r['order_id'] for r in tables['orders']['rows']])
 
     def test_showcase_observes_group_crud_and_revokes_access_after_leaving(self):
         oid=self.create();base=f'/group-orders/{oid}';view=f'/api/v1/showcase/group-orders/{oid}'

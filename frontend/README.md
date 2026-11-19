@@ -1,6 +1,5 @@
 # foodpanda frontend
 
-**English** | [简体中文](README.zh-CN.md)
 
 HTML/CSS/JavaScript served by Flask, with real MySQL data through `/api/v1`. No npm build is required.
 
@@ -34,4 +33,4 @@ Use Alice and Bob in separate browser profiles or normal/private windows; ordina
 
 Menus and prices come from the seeded database; local photos are mapped to actual IDs. Image/icon/QR sources are in [assets/SOURCES.md](assets/SOURCES.md). Optional Google Fonts fall back to system fonts offline. The existing panda SVG comes from Simple Icons. This is a student prototype.
 
-[API contract](../docs/API.md) · [中文接口约定](../docs/API.zh-CN.md)
+[API contract](../docs/API.md)

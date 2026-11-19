@@ -6,7 +6,7 @@ from pymysql.constants import CLIENT
 from werkzeug.security import generate_password_hash
 from .app import create_app, ROOT
 
-DEMO_PASSWORD = 'DemoPass3278!'
+DEMO_PASSWORD = '123456'
 
 
 def import_sql(connection, filename):
@@ -19,9 +19,9 @@ def import_sql(connection, filename):
 
 def prepare_demo_accounts(connection):
     with connection.cursor() as cursor:
-        for uid in (90001, 90002):
-            cursor.execute('UPDATE users SET password_hash=%s WHERE user_id=%s',
-                           (generate_password_hash(DEMO_PASSWORD), uid))
+        for uid, email in ((90001, 'alice@gmail.com'), (90002, 'bob@gmail.com')):
+            cursor.execute('UPDATE users SET email=%s,password_hash=%s WHERE user_id=%s',
+                           (email, generate_password_hash(DEMO_PASSWORD), uid))
     connection.commit()
 
 
@@ -114,8 +114,8 @@ def main():
         elif args.command == 'refresh-labels':
             print('Reserved display labels refreshed; existing passwords and orders preserved.')
         else:
-            print('Demo buyers: alice@example.com and bob@example.com')
-            print('Password: DemoPass3278! (local demo only)')
+            print('Demo buyers: alice@gmail.com and bob@gmail.com')
+            print('Password: 123456 (local demo only)')
     finally:
         connection.close()
 

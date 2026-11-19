@@ -9,8 +9,8 @@
 START TRANSACTION;
 
 INSERT INTO users (user_id, username, email, phone_number, password_hash) VALUES
-    (90001, 'Alice Wong', 'alice@example.com', '+85200009001', 'test-only-hash-90001'),
-    (90002, 'Bob Chan', 'bob@example.com', '+85200009002', 'test-only-hash-90002'),
+    (90001, 'Alice Wong', 'alice@gmail.com', '+85200009001', 'test-only-hash-90001'),
+    (90002, 'Bob Chan', 'bob@gmail.com', '+85200009002', 'test-only-hash-90002'),
     (90003, 'Carol Lee', 'carol@example.com', '+85200009003', 'test-only-hash-90003'),
     (90004, 'David Lam', 'david@example.com', '+85200009004', 'test-only-hash-90004'),
     (90005, 'Emma Cheung', 'emma@example.com', '+85200009005', 'test-only-hash-90005'),
